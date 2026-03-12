@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.development
+.env.production
+.env.deployed
+.env.local
+deployments.json
+contracts/combined.json
+contracts/*.zbin
+*.log
+.DS_Store
