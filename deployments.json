@@ -1,0 +1,12 @@
+{
+  "network": "local",
+  "timestamp": "2026-03-12T21:05:08.114Z",
+  "deployer": "0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac",
+  "chainId": 42,
+  "contracts": {
+    "PollStorage": "0x6dea8ebde43e092c9cac9db1358d63c417ac060d",
+    "PollCreation": "0x0888c014cca71e5e15f0caa732c319ee420072a6",
+    "VoteAction": "0xa7a9a6b2a2e79e747ce1097750edd3d5a6583ad3",
+    "ResultsReader": "0xc99388dcc12b0971fd7aa71af0c389f523a9fa44"
+  }
+}
