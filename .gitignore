@@ -1,12 +1,30 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+output/
+
+# Environment (secrets)
 .env
+.env.local
 .env.development
 .env.production
-.env.deployed
-.env.local
+
+# Deployment artifacts (contain addresses, regenerated per deploy)
 deployments.json
+
+# Revive compiler output
 contracts/combined.json
-contracts/*.zbin
-*.log
+contracts/*.polkavm
+contracts/*.bin
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
