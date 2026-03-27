@@ -1,32 +1,9 @@
-import { defineChain } from 'viem';
-
 // Contract addresses from environment
 export const QNS_CONTRACT_ADDRESS = import.meta.env.VITE_QNS_REGISTRY_ADDRESS as `0x${string}`;
 export const QNS_REGISTRY_ADDRESS = import.meta.env.VITE_QNS_REGISTRY_ADDRESS as `0x${string}`;
 
-export const QF_NETWORK = defineChain({
-  id: 42,
-  name: 'QF Network',
-  nativeCurrency: {
-    decimals: 18,
-    name: 'QF',
-    symbol: 'QF',
-  },
-  rpcUrls: {
-    default: {
-      http: ['https://archive.mainnet.qfnode.net/eth'],
-    },
-    public: {
-      http: ['https://archive.mainnet.qfnode.net/eth'],
-    },
-  },
-  blockExplorers: {
-    default: {
-      name: 'QF Explorer',
-      url: 'https://explorer.qfnode.net',
-    },
-  },
-});
+export const QF_CHAIN_ID = 3426;
+export const QF_RPC_URL = import.meta.env.VITE_QF_RPC_URL || "wss://mainnet.qfnode.net";
 
 export const COLORS = {
   background: '#0C0A09',
