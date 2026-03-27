@@ -1,127 +1,128 @@
 #!/usr/bin/env ts-node
 /**
- * QUORUM — Contract Deployment for QF Network (Substrate + Revive/PolkaVM)
+ * QUORUM Contract Deployment — QF Network (pallet-revive)
  *
- * Uses @polkadot/api-contract CodePromise — the same deployment path
- * proven in production by QNS (dotqf.xyz).
- *
- * Prerequisites:
- *   - Run ./scripts/compile-revive.sh first
- *   - .env with QF_RPC_URL, QNS addresses, TREASURY_ADDRESS
- *   - Pass DEPLOYER_MNEMONIC inline at runtime
- *
- * Usage:
- *   DEPLOYER_MNEMONIC="your mnemonic" npx ts-node scripts/deploy-substrate.ts
+ * Uses api.tx.revive.instantiateWithCode directly.
+ * @polkadot/api-contract is NOT used — it targets pallet-contracts, not pallet-revive.
  */
 
 import { ApiPromise, WsProvider, Keyring } from '@polkadot/api';
-import { CodePromise } from '@polkadot/api-contract';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { resolve } from 'path';
 import { config } from 'dotenv';
-import { encodeFunctionData, keccak256 } from 'viem';
+import { encodeFunctionData } from 'viem';
 
 config();
 
-// =============================================================================
-// CONFIGURATION
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════════
 
-const RPC_URL = process.env.QF_RPC_URL || 'wss://mainnet.qfnode.net';
-const MNEMONIC = process.env.DEPLOYER_MNEMONIC;
-const BURN_ADDRESS = process.env.BURN_ADDRESS || '0x000000000000000000000000000000000000dEaD';
+const RPC_URL          = process.env.QF_RPC_URL || 'wss://mainnet.qfnode.net';
+const ETH_RPC_URL      = process.env.QF_ETH_RPC_URL || 'https://archive.mainnet.qfnode.net/eth';
+const MNEMONIC         = process.env.DEPLOYER_MNEMONIC;
 
-const QNS_REGISTRY_ADDRESS = process.env.QNS_REGISTRY_ADDRESS;
-const QNS_RESOLVER_ADDRESS = process.env.QNS_RESOLVER_ADDRESS;
-const QNS_REGISTRAR_ADDRESS = process.env.QNS_REGISTRAR_ADDRESS;
-const TREASURY_ADDRESS = process.env.TREASURY_ADDRESS;
-const QFLINK_PODS_STORAGE_ADDRESS = process.env.QFLINK_PODS_STORAGE_ADDRESS || '';
-const QFLINK_REVENUE_ADDRESS = process.env.QFLINK_REVENUE_ADDRESS || '';
+const QNS_RESOLVER     = process.env.QNS_RESOLVER_ADDRESS!;
+const QNS_REGISTRY     = process.env.QNS_REGISTRY_ADDRESS!;
+const QNS_REGISTRAR    = process.env.QNS_REGISTRAR_ADDRESS!;
+const TREASURY         = process.env.TREASURY_ADDRESS!;
+const BURN_ADDRESS     = process.env.BURN_ADDRESS || '0x000000000000000000000000000000000000dEaD';
 
-const CREATION_FEE = 100n * 10n ** 18n; // 100 QF
-const TREASURY_BPS = 5000; // 50%
-const QFLINK_FEE = 50n * 10n ** 18n; // 50 QF
-const GAS_LIMIT = 100_000_000_000n;
+// Optional QFLink
+const QFLINK_PODS      = process.env.QFLINK_PODS_ADDRESS || '';
+const QFLINK_REVENUE   = process.env.QFLINK_REVENUE_ADDRESS || '';
 
-// =============================================================================
-// PATHS
-// =============================================================================
+// Fees
+const CREATION_FEE     = 100n * 10n ** 18n;   // 100 QF
+const TREASURY_BPS     = 5000;                 // 50%
+const QFLINK_FEE       = 50n * 10n ** 18n;    // 50 QF
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = resolve(__dirname, '..');
+// Gas — generous limits; unused weight is refunded
+const DEFAULT_REF_TIME   = 100_000_000_000n;
+const DEFAULT_PROOF_SIZE = 5_000_000n;
+const STORAGE_DEPOSIT    = 0n;   // 0 = unlimited
 
-// =============================================================================
+// Contract deployment order
+const CONTRACTS = [
+  'PollStorage',
+  'PollCreation',
+  'VoteAction',
+  'ResultsReader',
+  'QFLinkPollBridge',
+] as const;
+
+// ═══════════════════════════════════════════════════════════════════
 // HELPERS
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════
 
-function formatBalance(balance: bigint): string {
-  const qf = Number(balance) / 1e18;
-  return qf.toLocaleString('en-US', { maximumFractionDigits: 4 });
+function loadAbi(name: string): any[] {
+  const p = resolve(`src/abi/${name}.json`);
+  if (!existsSync(p)) throw new Error(`ABI not found: ${p}`);
+  return JSON.parse(readFileSync(p, 'utf-8'));
 }
 
-function deriveEvmAddress(publicKey: Uint8Array): string {
-  const hex = '0x' + Array.from(publicKey).map(b => b.toString(16).padStart(2, '0')).join('');
-  const hash = keccak256(hex as `0x${string}`);
-  return '0x' + hash.slice(-40);
+function loadBytecode(name: string): Uint8Array {
+  const p = resolve(`output/${name}.polkavm`);
+  if (!existsSync(p)) throw new Error(`Bytecode not found: ${p}`);
+  return readFileSync(p);
 }
 
-function loadABI(contractName: string): any {
-  const abiPath = resolve(PROJECT_ROOT, 'src', 'abi', `${contractName}.json`);
-  if (!existsSync(abiPath)) {
-    throw new Error(`ABI not found: ${abiPath}. Run ./scripts/compile-revive.sh first.`);
-  }
-  const raw = JSON.parse(readFileSync(abiPath, 'utf-8'));
-  return Array.isArray(raw) ? raw : raw.abi || raw;
+function formatBalance(raw: bigint): string {
+  return (Number(raw) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 4 });
 }
 
-function loadBytecode(contractName: string): Buffer {
-  const bytecodePath = resolve(PROJECT_ROOT, 'output', `${contractName}.polkavm`);
-  if (!existsSync(bytecodePath)) {
-    throw new Error(`Bytecode not found: ${bytecodePath}. Run ./scripts/compile-revive.sh first.`);
-  }
-  return readFileSync(bytecodePath);
+/**
+ * Encode Solidity constructor arguments.
+ * For contracts with no constructor args, returns '0x' (empty).
+ */
+function encodeConstructor(abi: any[], args: any[]): `0x${string}` {
+  const ctor = abi.find((item: any) => item.type === 'constructor');
+  if (!ctor || ctor.inputs.length === 0) return '0x';
+  // Use viem to ABI-encode the constructor inputs
+  // encodeFunctionData won't work for constructors, so encode manually:
+  const { encodeAbiParameters } = require('viem');
+  return encodeAbiParameters(ctor.inputs, args);
 }
 
-// =============================================================================
-// DEPLOY VIA CodePromise — same pattern as QNS production deployment
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════
+// DEPLOY & CALL
+// ═══════════════════════════════════════════════════════════════════
 
 async function deployContract(
   api: ApiPromise,
   deployer: any,
   name: string,
-  abi: any,
-  bytecode: Buffer,
+  abi: any[],
+  bytecode: Uint8Array,
   constructorArgs: any[] = [],
   value: bigint = 0n,
 ): Promise<string> {
   console.log(`\n--- Deploying ${name} ---`);
   console.log(`  Bytecode: ${bytecode.length} bytes`);
-  console.log(`  Constructor args: ${constructorArgs.length > 0 ? JSON.stringify(constructorArgs).slice(0, 150) : 'none'}`);
+  console.log(`  Constructor args: ${constructorArgs.length === 0 ? 'none' : JSON.stringify(constructorArgs)}`);
 
-  const code = new CodePromise(api, abi, bytecode);
+  // Encode constructor data
+  const ctorData = encodeConstructor(abi, constructorArgs);
+  const dataHex = ctorData === '0x' ? '0x' : ctorData;
 
-  // CodePromise expects the constructor identifier.
-  // For standard Solidity compiled via resolc, the constructor is 'new'.
-  const constructorId = (abi as any)?.contract?.constructors?.[0]?.identifier || 'new';
-
-  const tx = code.tx[constructorId](
-    {
-      gasLimit: GAS_LIMIT,
-      value,
-    },
-    ...constructorArgs,
+  // Build the extrinsic
+  const tx = api.tx.revive.instantiateWithCode(
+    value,                                             // value: Balance
+    { refTime: DEFAULT_REF_TIME, proofSize: DEFAULT_PROOF_SIZE }, // weight_limit: Weight
+    STORAGE_DEPOSIT,                                   // storage_deposit_limit
+    `0x${Buffer.from(bytecode).toString('hex')}`,      // code: Vec<u8>
+    dataHex,                                           // data: Vec<u8>
+    null,                                              // salt: None → CREATE1
   );
 
-  return new Promise<string>((resolvePromise, reject) => {
-    tx.signAndSend(deployer, ({ status, events, dispatchError }: any) => {
+  return new Promise<string>((resolve, reject) => {
+    tx.signAndSend(deployer, ({ status, events, dispatchError }) => {
       if (dispatchError) {
         if (dispatchError.isModule) {
           const decoded = api.registry.findMetaError(dispatchError.asModule);
-          reject(new Error(`${name}: ${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`));
+          reject(new Error(`${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`));
         } else {
-          reject(new Error(`${name}: Dispatch error: ${dispatchError.toString()}`));
+          reject(new Error(`Dispatch error: ${dispatchError.toString()}`));
         }
         return;
       }
@@ -134,381 +135,277 @@ async function deployContract(
         console.log(`  ✅ Finalized: ${status.asFinalized.toHex()}`);
 
         let contractAddress: string | null = null;
-
-        events.forEach(({ event }: any) => {
+        for (const { event } of events) {
           if (event.section === 'revive' && event.method === 'Instantiated') {
+            // event.data: [deployer, contractAddress]
             contractAddress = event.data[1]?.toString();
           }
-        });
+        }
 
         if (!contractAddress) {
-          // Debug output
-          console.log('  ⚠ No Instantiated event found. All revive events:');
-          events.forEach(({ event }: any) => {
-            if (event.section === 'revive') {
-              console.log(`    ${event.section}.${event.method}:`, JSON.stringify(event.data.toJSON()));
-            }
-          });
-          reject(new Error(`${name}: Contract address not found in events`));
+          // Fallback: look for the address in any event data
+          for (const { event } of events) {
+            console.log(`  Event: ${event.section}.${event.method} ${JSON.stringify(event.data.map((d: any) => d.toString()))}`);
+          }
+          reject(new Error(`${name}: no contract address found in events`));
           return;
         }
 
-        console.log(`  📍 ${name} → ${contractAddress}`);
-        resolvePromise(contractAddress);
+        console.log(`  📍 Address: ${contractAddress}`);
+        resolve(contractAddress);
       }
     }).catch(reject);
   });
 }
-
-// =============================================================================
-// WRITE CALL — call a function on a deployed contract
-// =============================================================================
 
 async function callContractWrite(
   api: ApiPromise,
   deployer: any,
-  contractName: string,
   contractAddress: string,
   abi: any[],
   functionName: string,
-  args: any[] = [],
+  args: any[],
   value: bigint = 0n,
 ): Promise<void> {
-  const argsDisplay = args.map(a =>
-    typeof a === 'string' && a.length > 28 ? a.slice(0, 12) + '…' + a.slice(-8) : String(a)
-  ).join(', ');
-  console.log(`  → ${contractName}.${functionName}(${argsDisplay})`);
+  console.log(`  → ${functionName}(${args.map(a => typeof a === 'bigint' ? a.toString() : a).join(', ')})`);
 
-  const data = encodeFunctionData({ abi, functionName, args });
+  const data = encodeFunctionData({
+    abi,
+    functionName,
+    args,
+  });
 
-  // Discover the correct extrinsic shape from the chain metadata.
-  // On QF Network's pallet-revive, revive.call takes:
-  //   dest, value, gas_limit (Weight), storage_deposit_limit, data
-  //
-  // We build the Weight the same way QNS/QFPay frontends do for writes.
+  const tx = api.tx.revive.call(
+    contractAddress,                                     // dest: H160
+    value,                                               // value
+    { refTime: DEFAULT_REF_TIME, proofSize: DEFAULT_PROOF_SIZE }, // weight_limit
+    STORAGE_DEPOSIT,                                     // storage_deposit_limit
+    data,                                                // data
+  );
 
-  return new Promise<void>((resolvePromise, reject) => {
-    // Build the call. @polkadot/api reads the chain metadata and knows
-    // exactly what shape gas_limit should be (Weight struct, u64, etc).
-    const tx = api.tx.revive.call(
-      contractAddress,
-      value,
-      api.createType('Weight', {
-        refTime: GAS_LIMIT,
-        proofSize: 5_000_000n,
-      }),
-      DEFAULT_STORAGE_DEPOSIT,
-      data,
-    );
-
-    tx.signAndSend(deployer, ({ status, dispatchError }: any) => {
+  return new Promise<void>((resolve, reject) => {
+    tx.signAndSend(deployer, ({ status, dispatchError }) => {
       if (dispatchError) {
         if (dispatchError.isModule) {
           const decoded = api.registry.findMetaError(dispatchError.asModule);
-          reject(new Error(
-            `${contractName}.${functionName}: ${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}` 
-          ));
+          reject(new Error(`${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`));
         } else {
-          reject(new Error(
-            `${contractName}.${functionName}: ${dispatchError.toString()}` 
-          ));
+          reject(new Error(`Dispatch error: ${dispatchError.toString()}`));
         }
         return;
       }
-
       if (status.isFinalized) {
-        console.log(`    ✅ ${functionName} finalized`);
-        resolvePromise();
+        console.log(`    ✅ Finalized`);
+        resolve();
       }
     }).catch(reject);
   });
 }
 
-const DEFAULT_STORAGE_DEPOSIT = 0n;
-
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════
 // MAIN
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════
 
 async function main() {
   console.log('=============================================================');
-  console.log('  QUORUM — Substrate Deployment (PolkaVM / Revive)');
-  console.log('  Using CodePromise (same as QNS production)');
+  console.log('  QUORUM — Contract Deployment (pallet-revive)');
   console.log('=============================================================\n');
 
-  // ── Validate ──
-  if (!MNEMONIC) {
-    console.error('❌ DEPLOYER_MNEMONIC not set.');
-    console.error('   Run: DEPLOYER_MNEMONIC="your mnemonic" npx ts-node scripts/deploy-substrate.ts');
-    process.exit(1);
-  }
-  if (!QNS_RESOLVER_ADDRESS) {
-    console.error('❌ QNS_RESOLVER_ADDRESS not set in .env');
-    process.exit(1);
-  }
-  if (!TREASURY_ADDRESS) {
-    console.error('❌ TREASURY_ADDRESS not set in .env');
-    process.exit(1);
-  }
+  // Validate
+  if (!MNEMONIC) { console.error('❌ DEPLOYER_MNEMONIC not set'); process.exit(1); }
+  if (!QNS_RESOLVER) { console.error('❌ QNS_RESOLVER_ADDRESS not set'); process.exit(1); }
+  if (!TREASURY) { console.error('❌ TREASURY_ADDRESS not set'); process.exit(1); }
 
-  // ── Connect ──
+  // Connect
   console.log(`📡 Connecting to ${RPC_URL}...`);
   const provider = new WsProvider(RPC_URL);
   const api = await ApiPromise.create({ provider });
-
-  const [chain, nodeName, nodeVersion] = await Promise.all([
+  const [chain, nodeName] = await Promise.all([
     api.rpc.system.chain(),
     api.rpc.system.name(),
-    api.rpc.system.version(),
   ]);
-  console.log(`✅ Connected: ${chain} | ${nodeName} v${nodeVersion}\n`);
+  console.log(`✅ Connected to ${chain} (${nodeName})`);
 
-  // ── Deployer ──
-  const keyring = new Keyring({ type: 'sr25519' });
-  const deployer = keyring.addFromMnemonic(MNEMONIC);
-  const deployerEvmAddress = deriveEvmAddress(deployer.publicKey);
-  console.log(`🔑 Deployer SS58: ${deployer.address}`);
-  console.log(`🔑 Deployer EVM:  ${deployerEvmAddress}`);
-
-  const { data: balance } = await api.query.system.account(deployer.address);
-  const freeBalance = BigInt(balance.free.toString());
-  console.log(`💰 Balance: ${formatBalance(freeBalance)} QF\n`);
-
-  if (freeBalance === 0n) {
-    console.error('❌ Deployer has zero balance.');
+  // Verify revive pallet exists
+  if (!api.tx.revive) {
+    console.error('❌ This runtime does not expose api.tx.revive. Is this pallet-revive chain?');
     process.exit(1);
   }
 
-  // ── Load compiled contracts ──
-  console.log('📦 Loading compiled contracts...');
+  // Load deployer
+  const keyring = new Keyring({ type: 'sr25519' });
+  const deployer = keyring.addFromMnemonic(MNEMONIC);
+  console.log(`🔑 Deployer: ${deployer.address}`);
 
-  interface ContractArtifact {
-    abi: any;
-    bytecode: Buffer;
-  }
+  const { data: balance } = await api.query.system.account(deployer.address);
+  const free = BigInt(balance.free.toString());
+  console.log(`💰 Balance: ${formatBalance(free)} QF\n`);
+  if (free === 0n) { console.error('❌ Zero balance'); process.exit(1); }
 
-  const contracts: Record<string, ContractArtifact> = {};
-  const requiredContracts = ['PollStorage', 'PollCreation', 'VoteAction', 'ResultsReader'];
-  const optionalContracts = ['QFLinkPollBridge'];
-
-  for (const name of [...requiredContracts, ...optionalContracts]) {
-    try {
-      contracts[name] = {
-        abi: loadABI(name),
-        bytecode: loadBytecode(name),
-      };
-      console.log(`  ✓ ${name} (${contracts[name].bytecode.length} bytes)`);
-    } catch (err: any) {
-      if (optionalContracts.includes(name)) {
-        console.log(`  ⚠ ${name} skipped (optional)`);
-      } else {
-        throw err;
-      }
-    }
-  }
-
-  // ── Config summary ──
-  console.log('\n📋 Configuration:');
-  console.log(`  QNS Resolver:     ${QNS_RESOLVER_ADDRESS}`);
-  if (QNS_REGISTRY_ADDRESS) console.log(`  QNS Registry:     ${QNS_REGISTRY_ADDRESS}`);
-  if (QNS_REGISTRAR_ADDRESS) console.log(`  QNS Registrar:    ${QNS_REGISTRAR_ADDRESS}`);
-  console.log(`  Treasury:         ${TREASURY_ADDRESS}`);
+  // Print config
+  console.log('📋 Configuration:');
+  console.log(`  QNS Resolver:     ${QNS_RESOLVER}`);
+  console.log(`  QNS Registry:     ${QNS_REGISTRY}`);
+  console.log(`  Treasury:         ${TREASURY}`);
   console.log(`  Burn:             ${BURN_ADDRESS}`);
   console.log(`  Creation Fee:     100 QF`);
   console.log(`  Treasury Split:   50%`);
-  if (QFLINK_PODS_STORAGE_ADDRESS) console.log(`  QFLink Pods:      ${QFLINK_PODS_STORAGE_ADDRESS}`);
 
-  // ════════════════════════════════════════════════════════════════════
+  // Load compiled contracts
+  const abis: Record<string, any[]> = {};
+  const bytecodes: Record<string, Uint8Array> = {};
+  for (const name of CONTRACTS) {
+    try {
+      abis[name] = loadAbi(name);
+      bytecodes[name] = loadBytecode(name);
+    } catch (e: any) {
+      if (name === 'QFLinkPollBridge' && !QFLINK_REVENUE) {
+        console.log(`\n⏭  Skipping ${name} (no QFLink config)`);
+        continue;
+      }
+      throw e;
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════
   // DEPLOY
-  // ════════════════════════════════════════════════════════════════════
-
+  // ═════════════════════════════════════════════════════════════════
   console.log('\n=============================================================');
   console.log('  DEPLOYING CONTRACTS');
   console.log('=============================================================');
 
+  const addresses: Record<string, string> = {};
+
   // 1. PollStorage — no constructor args
-  const pollStorageAddress = await deployContract(
-    api, deployer, 'PollStorage',
-    contracts.PollStorage.abi,
-    contracts.PollStorage.bytecode,
+  addresses.PollStorage = await deployContract(
+    api, deployer, 'PollStorage', abis.PollStorage, bytecodes.PollStorage
   );
 
-  // 2. PollCreation(pollStorage, qnsResolver, treasury, burn, fee, bps)
-  const pollCreationAddress = await deployContract(
-    api, deployer, 'PollCreation',
-    contracts.PollCreation.abi,
-    contracts.PollCreation.bytecode,
-    [
-      pollStorageAddress,
-      QNS_RESOLVER_ADDRESS,
-      TREASURY_ADDRESS,
-      BURN_ADDRESS,
-      CREATION_FEE,
-      TREASURY_BPS,
-    ],
+  // 2. PollCreation(pollStorage, qnsResolver, treasury, burnAddress, creationFee, treasuryBps)
+  addresses.PollCreation = await deployContract(
+    api, deployer, 'PollCreation', abis.PollCreation, bytecodes.PollCreation,
+    [addresses.PollStorage, QNS_RESOLVER, TREASURY, BURN_ADDRESS, CREATION_FEE, TREASURY_BPS]
   );
 
   // 3. VoteAction(pollStorage)
-  const voteActionAddress = await deployContract(
-    api, deployer, 'VoteAction',
-    contracts.VoteAction.abi,
-    contracts.VoteAction.bytecode,
-    [pollStorageAddress],
+  addresses.VoteAction = await deployContract(
+    api, deployer, 'VoteAction', abis.VoteAction, bytecodes.VoteAction,
+    [addresses.PollStorage]
   );
 
   // 4. ResultsReader(pollStorage)
-  const resultsReaderAddress = await deployContract(
-    api, deployer, 'ResultsReader',
-    contracts.ResultsReader.abi,
-    contracts.ResultsReader.bytecode,
-    [pollStorageAddress],
+  addresses.ResultsReader = await deployContract(
+    api, deployer, 'ResultsReader', abis.ResultsReader, bytecodes.ResultsReader,
+    [addresses.PollStorage]
   );
 
-  // 5. QFLinkPollBridge (optional)
-  let bridgeAddress: string | null = null;
-  if (contracts.QFLinkPollBridge && QFLINK_REVENUE_ADDRESS) {
-    bridgeAddress = await deployContract(
-      api, deployer, 'QFLinkPollBridge',
-      contracts.QFLinkPollBridge.abi,
-      contracts.QFLinkPollBridge.bytecode,
-      [pollCreationAddress, QFLINK_REVENUE_ADDRESS, QFLINK_FEE],
+  // 5. Optional: QFLinkPollBridge
+  if (QFLINK_REVENUE && abis.QFLinkPollBridge && bytecodes.QFLinkPollBridge) {
+    addresses.QFLinkPollBridge = await deployContract(
+      api, deployer, 'QFLinkPollBridge', abis.QFLinkPollBridge, bytecodes.QFLinkPollBridge,
+      [addresses.PollCreation, QFLINK_REVENUE, QFLINK_PODS || '0x0000000000000000000000000000000000000000', QFLINK_FEE]
     );
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // WIRE
-  // ════════════════════════════════════════════════════════════════════
-
+  // ═════════════════════════════════════════════════════════════════
+  // WIRE AUTHORIZATIONS
+  // ═════════════════════════════════════════════════════════════════
   console.log('\n=============================================================');
   console.log('  WIRING CONTRACTS');
   console.log('=============================================================');
 
-  // Authorize PollCreation → PollStorage
-  await callContractWrite(
-    api, deployer, 'PollStorage', pollStorageAddress,
-    contracts.PollStorage.abi,
-    'setAuthorized', [pollCreationAddress, true],
-  );
+  // Authorize PollCreation on PollStorage
+  console.log('\n📝 Authorizing PollCreation on PollStorage...');
+  await callContractWrite(api, deployer, addresses.PollStorage, abis.PollStorage,
+    'setAuthorized', [addresses.PollCreation, true]);
 
-  // Authorize VoteAction → PollStorage
-  await callContractWrite(
-    api, deployer, 'PollStorage', pollStorageAddress,
-    contracts.PollStorage.abi,
-    'setAuthorized', [voteActionAddress, true],
-  );
+  // Authorize VoteAction on PollStorage
+  console.log('\n📝 Authorizing VoteAction on PollStorage...');
+  await callContractWrite(api, deployer, addresses.PollStorage, abis.PollStorage,
+    'setAuthorized', [addresses.VoteAction, true]);
 
   // Set QNS resolver on VoteAction
-  await callContractWrite(
-    api, deployer, 'VoteAction', voteActionAddress,
-    contracts.VoteAction.abi,
-    'setQNSContract', [QNS_RESOLVER_ADDRESS],
-  );
+  console.log('\n📝 Setting QNS resolver on VoteAction...');
+  await callContractWrite(api, deployer, addresses.VoteAction, abis.VoteAction,
+    'setQNSContract', [QNS_RESOLVER]);
 
-  // Set QFLink pods storage on VoteAction (if available)
-  if (QFLINK_PODS_STORAGE_ADDRESS) {
-    await callContractWrite(
-      api, deployer, 'VoteAction', voteActionAddress,
-      contracts.VoteAction.abi,
-      'setQFLinkContract', [QFLINK_PODS_STORAGE_ADDRESS],
-    );
+  // Optional: set QFLink contract on VoteAction
+  if (QFLINK_PODS) {
+    console.log('\n📝 Setting QFLink pods on VoteAction...');
+    await callContractWrite(api, deployer, addresses.VoteAction, abis.VoteAction,
+      'setQFLinkContract', [QFLINK_PODS]);
   }
 
-  // Wire bridge (if deployed)
-  if (bridgeAddress) {
-    await callContractWrite(
-      api, deployer, 'PollStorage', pollStorageAddress,
-      contracts.PollStorage.abi,
-      'setAuthorized', [bridgeAddress, true],
-    );
-    if (QFLINK_PODS_STORAGE_ADDRESS) {
-      await callContractWrite(
-        api, deployer, 'QFLinkPollBridge', bridgeAddress,
-        contracts.QFLinkPollBridge.abi,
-        'setQFLinkContract', [QFLINK_PODS_STORAGE_ADDRESS],
-      );
-    }
+  // Optional: authorize QFLinkPollBridge on PollStorage
+  if (addresses.QFLinkPollBridge) {
+    console.log('\n📝 Authorizing QFLinkPollBridge on PollStorage...');
+    await callContractWrite(api, deployer, addresses.PollStorage, abis.PollStorage,
+      'setAuthorized', [addresses.QFLinkPollBridge, true]);
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // OUTPUT
-  // ════════════════════════════════════════════════════════════════════
-
+  // ═════════════════════════════════════════════════════════════════
+  // OUTPUT FILES
+  // ═════════════════════════════════════════════════════════════════
   console.log('\n=============================================================');
   console.log('  WRITING OUTPUT FILES');
   console.log('=============================================================');
 
-  const deployments = {
+  const deployment = {
     network: 'mainnet',
     chainId: 3426,
+    rpcUrl: RPC_URL,
+    ethRpcUrl: ETH_RPC_URL,
     timestamp: new Date().toISOString(),
-    deployer: {
-      ss58: deployer.address,
-      evm: deployerEvmAddress,
-    },
-    contracts: {
-      PollStorage: pollStorageAddress,
-      PollCreation: pollCreationAddress,
-      VoteAction: voteActionAddress,
-      ResultsReader: resultsReaderAddress,
-      ...(bridgeAddress && { QFLinkPollBridge: bridgeAddress }),
-    },
-    configuration: {
-      creationFee: '100 QF',
+    deployer: deployer.address,
+    contracts: addresses,
+    config: {
+      qnsResolver: QNS_RESOLVER,
+      qnsRegistry: QNS_REGISTRY,
+      qnsRegistrar: QNS_REGISTRAR,
+      treasury: TREASURY,
+      burnAddress: BURN_ADDRESS,
+      creationFee: CREATION_FEE.toString(),
       treasuryBps: TREASURY_BPS,
-      qnsResolver: QNS_RESOLVER_ADDRESS,
-      treasury: TREASURY_ADDRESS,
-      burn: BURN_ADDRESS,
+      qflinkFee: QFLINK_FEE.toString(),
     },
   };
 
-  writeFileSync(resolve(PROJECT_ROOT, 'deployments.json'), JSON.stringify(deployments, null, 2));
-  console.log('✅ deployments.json');
+  writeFileSync('deployments.json', JSON.stringify(deployment, null, 2));
+  console.log('  ✅ deployments.json');
 
-  const envContent = `# QUORUM Frontend Environment
-# Generated: ${new Date().toISOString()}
-# Network: QF Mainnet (Chain ID 3426)
+  // Generate .env files for frontend
+  const envContent = [
+    `# QUORUM Frontend — generated ${new Date().toISOString()}`,
+    `VITE_QF_RPC_URL=${RPC_URL}`,
+    `VITE_QF_ETH_RPC_URL=${ETH_RPC_URL}`,
+    `VITE_POLL_STORAGE_ADDRESS=${addresses.PollStorage}`,
+    `VITE_POLL_CREATION_ADDRESS=${addresses.PollCreation}`,
+    `VITE_VOTE_ACTION_ADDRESS=${addresses.VoteAction}`,
+    `VITE_RESULTS_READER_ADDRESS=${addresses.ResultsReader}`,
+    addresses.QFLinkPollBridge ? `VITE_QFLINK_BRIDGE_ADDRESS=${addresses.QFLinkPollBridge}` : '',
+    `VITE_QNS_RESOLVER_ADDRESS=${QNS_RESOLVER}`,
+    `VITE_QNS_REGISTRY_ADDRESS=${QNS_REGISTRY}`,
+    `VITE_QNS_REGISTRAR_ADDRESS=${QNS_REGISTRAR}`,
+    `VITE_TREASURY_ADDRESS=${TREASURY}`,
+    `VITE_BURN_ADDRESS=${BURN_ADDRESS}`,
+    `VITE_CREATION_FEE=100`,
+    `VITE_TREASURY_BPS=${TREASURY_BPS}`,
+  ].filter(Boolean).join('\n');
 
-# RPC
-VITE_QF_WS_URL=wss://mainnet.qfnode.net
-VITE_QF_ETH_RPC_URL=https://archive.mainnet.qfnode.net/eth
+  writeFileSync('.env.development', envContent);
+  writeFileSync('.env.production', envContent);
+  console.log('  ✅ .env.development');
+  console.log('  ✅ .env.production');
 
-# QUORUM Contracts
-VITE_POLL_STORAGE_ADDRESS=${pollStorageAddress}
-VITE_POLL_CREATION_ADDRESS=${pollCreationAddress}
-VITE_VOTE_ACTION_ADDRESS=${voteActionAddress}
-VITE_RESULTS_READER_ADDRESS=${resultsReaderAddress}
-${bridgeAddress ? `VITE_QFLINK_POLL_BRIDGE_ADDRESS=${bridgeAddress}` : '# VITE_QFLINK_POLL_BRIDGE_ADDRESS= (not deployed)'}
-
-# QNS
-VITE_QNS_REGISTRY_ADDRESS=${QNS_REGISTRY_ADDRESS || ''}
-VITE_QNS_RESOLVER_ADDRESS=${QNS_RESOLVER_ADDRESS}
-VITE_QNS_REGISTRAR_ADDRESS=${QNS_REGISTRAR_ADDRESS || ''}
-
-# QFLink
-VITE_QFLINK_PODS_STORAGE_ADDRESS=${QFLINK_PODS_STORAGE_ADDRESS}
-
-# Treasury & Burn
-VITE_TREASURY_ADDRESS=${TREASURY_ADDRESS}
-VITE_BURN_ADDRESS=${BURN_ADDRESS}
-`;
-
-  writeFileSync(resolve(PROJECT_ROOT, '.env.development'), envContent);
-  writeFileSync(resolve(PROJECT_ROOT, '.env.production'), envContent);
-  console.log('✅ .env.development');
-  console.log('✅ .env.production');
-
-  // ════════════════════════════════════════════════════════════════════
-  // DONE
-  // ════════════════════════════════════════════════════════════════════
-
+  // ═════════════════════════════════════════════════════════════════
+  // SUMMARY
+  // ═════════════════════════════════════════════════════════════════
   console.log('\n=============================================================');
   console.log('  ✅ DEPLOYMENT COMPLETE');
-  console.log('=============================================================');
-  console.log(`  PollStorage:      ${pollStorageAddress}`);
-  console.log(`  PollCreation:     ${pollCreationAddress}`);
-  console.log(`  VoteAction:       ${voteActionAddress}`);
-  console.log(`  ResultsReader:    ${resultsReaderAddress}`);
-  if (bridgeAddress) console.log(`  QFLinkPollBridge: ${bridgeAddress}`);
+  console.log('=============================================================\n');
+  for (const [name, addr] of Object.entries(addresses)) {
+    console.log(`  ${name.padEnd(22)} ${addr}`);
+  }
   console.log('');
 
   await api.disconnect();
