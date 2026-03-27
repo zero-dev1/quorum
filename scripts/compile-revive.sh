@@ -4,13 +4,12 @@
 # =============================================================================
 # Compiles all QUORUM contracts using resolc (Revive compiler).
 #
-# USAGE:
-#   ./scripts/compile-revive.sh              # Compile all contracts
-#   ./scripts/compile-revive.sh PollStorage  # Compile single contract
+# Unlike QNS (single-file contracts), QUORUM contracts have cross-file
+# imports (PollCreation imports PollStorage, VoteAction imports interfaces,
+# etc). This requires passing all files to resolc together.
 #
-# PREREQUISITES:
-#   - resolc (Revive compiler) in PATH
-#     https://github.com/niccoloZQ/revive or https://github.com/niccoloZQ/revive
+# USAGE:
+#   ./scripts/compile-revive.sh
 # =============================================================================
 
 set -e
@@ -27,8 +26,8 @@ OUTPUT_DIR="$PROJECT_ROOT/output"
 ABI_DIR="$PROJECT_ROOT/src/abi"
 CONTRACTS_DIR="$PROJECT_ROOT/contracts"
 
-# All QUORUM contracts (order matters for combined compilation)
-ALL_CONTRACTS=(
+# The contracts we need bytecode + ABI for (not interfaces)
+DEPLOY_CONTRACTS=(
   "PollStorage"
   "PollCreation"
   "VoteAction"
@@ -46,120 +45,169 @@ echo -e "${NC}"
 if ! command -v resolc &> /dev/null; then
   echo -e "${RED}✗ resolc not found in PATH${NC}"
   echo ""
-  echo "Install the Revive compiler:"
-  echo "  git clone https://github.com/niccoloZQ/revive"
-  echo "  cd revive && cargo build --release"
-  echo "  # Add target/release to PATH"
+  echo "Install the Revive compiler from:"
+  echo "  https://github.com/niccoloZQ/revive/releases"
   exit 1
 fi
 
-echo -e "${GREEN}✓ Found resolc: $(resolc --version 2>/dev/null || echo 'unknown version')${NC}"
+echo -e "${GREEN}✓ Found resolc: $(resolc --version 2>/dev/null || echo 'unknown')${NC}"
+echo ""
 
 # Create output directories
 mkdir -p "$OUTPUT_DIR"
 mkdir -p "$ABI_DIR"
 
-# Determine what to compile
-if [ $# -ge 1 ]; then
-  # Single contract mode
-  TARGET="$1"
-  SOL_FILE="$CONTRACTS_DIR/${TARGET}.sol"
-  if [ ! -f "$SOL_FILE" ]; then
-    echo -e "${RED}✗ Contract not found: $SOL_FILE${NC}"
-    exit 1
-  fi
-  echo -e "${BLUE}ℹ Compiling single contract: ${TARGET}${NC}"
-  echo ""
+# ─── Step 1: Gather ALL .sol files (contracts + interfaces) ────────────
+# resolc needs all files that are referenced by imports.
+# We pass every .sol file in contracts/ and contracts/interfaces/.
+ALL_SOL_FILES=""
+for f in "$CONTRACTS_DIR"/*.sol; do
+  [ -f "$f" ] && ALL_SOL_FILES="$ALL_SOL_FILES $f"
+done
+for f in "$CONTRACTS_DIR"/interfaces/*.sol; do
+  [ -f "$f" ] && ALL_SOL_FILES="$ALL_SOL_FILES $f"
+done
 
-  resolc "$SOL_FILE" \
-    --bin \
-    -O3 \
-    --output-dir "$OUTPUT_DIR"
-
-  # Copy ABI to frontend
-  if [ -f "$OUTPUT_DIR/${TARGET}.sol:${TARGET}.abi" ]; then
-    cp "$OUTPUT_DIR/${TARGET}.sol:${TARGET}.abi" "$ABI_DIR/${TARGET}.json"
-    echo -e "${GREEN}✓ ABI → src/abi/${TARGET}.json${NC}"
-  elif [ -f "$OUTPUT_DIR/${TARGET}.sol:${TARGET}.pvm" ]; then
-    # Extract ABI from combined.json if individual ABI not available
-    echo -e "${YELLOW}⚠ Individual ABI not found, will extract from combined.json${NC}"
-  fi
-
-  echo -e "${GREEN}✓ ${TARGET} compiled successfully${NC}"
-else
-  # All contracts — use combined JSON (same as the old deploy.mjs approach)
-  echo -e "${BLUE}ℹ Compiling all contracts (combined mode)${NC}"
-  echo ""
-
-  # Build the file list
-  SOL_FILES=""
-  for name in "${ALL_CONTRACTS[@]}"; do
-    SOL_FILES="$SOL_FILES $CONTRACTS_DIR/${name}.sol"
-  done
-
-  # Combined JSON compilation — produces combined.json with abi+bin for all
-  resolc $SOL_FILES \
-    --combined-json abi,bin \
-    -o "$CONTRACTS_DIR/" \
-    --overwrite
-
-  if [ ! -f "$CONTRACTS_DIR/combined.json" ]; then
-    echo -e "${RED}✗ combined.json not created — compilation failed${NC}"
-    exit 1
-  fi
-
-  echo -e "${GREEN}✓ combined.json created${NC}"
-
-  # Also compile individually for .pvm bytecode files and extract ABIs
-  for name in "${ALL_CONTRACTS[@]}"; do
-    SOL_FILE="$CONTRACTS_DIR/${name}.sol"
-    echo -e "  Compiling ${name}..."
-
-    resolc "$SOL_FILE" \
-      --bin \
-      -O3 \
-      --output-dir "$OUTPUT_DIR" 2>/dev/null || true
-
-    # Copy .pvm file to .polkavm for consistency with deploy script
-    if [ -f "$OUTPUT_DIR/${name}.sol:${name}.pvm" ]; then
-      cp "$OUTPUT_DIR/${name}.sol:${name}.pvm" "$OUTPUT_DIR/${name}.polkavm"
-      echo -e "  ${GREEN}✓ ${name}.pvm → ${name}.polkavm${NC}"
-    fi
-
-    # Extract ABI from combined.json
-    node -e "
-      const fs = require('fs');
-      const combined = JSON.parse(fs.readFileSync('$CONTRACTS_DIR/combined.json', 'utf-8'));
-      
-      Object.entries(combined.contracts).forEach(([path, contractData]) => {
-        const contractName = path.split(':').pop(); // Extract contract name from path
-        if (contractName === '$name' && contractData && contractData.abi) {
-          fs.writeFileSync('$ABI_DIR/${name}.json', JSON.stringify(contractData.abi, null, 2));
-          console.log('  ✓ ABI extracted for $name');
-        }
-      });
-    " 2>/dev/null || echo -e "  ${YELLOW}⚠ Could not extract ABI for ${name}${NC}"
-  done
-
-  echo ""
-  echo -e "${GREEN}=============================================================================${NC}"
-  echo -e "${GREEN}  ✓ All contracts compiled successfully${NC}"
-  echo -e "${GREEN}=============================================================================${NC}"
-  echo ""
-
-  # Summary
-  echo "  Output files:"
-  for name in "${ALL_CONTRACTS[@]}"; do
-    if [ -f "$OUTPUT_DIR/${name}.polkavm" ]; then
-      SIZE=$(stat -f%z "$OUTPUT_DIR/${name}.polkavm" 2>/dev/null || stat -c%s "$OUTPUT_DIR/${name}.polkavm" 2>/dev/null || echo "?")
-      echo "    ${name}.polkavm  (${SIZE} bytes)"
-    fi
-  done
-  echo ""
-  echo "  Frontend ABIs:"
-  for name in "${ALL_CONTRACTS[@]}"; do
-    if [ -f "$ABI_DIR/${name}.json" ]; then
-      echo "    src/abi/${name}.json"
-    fi
-  done
+if [ -z "$ALL_SOL_FILES" ]; then
+  echo -e "${RED}✗ No .sol files found in $CONTRACTS_DIR${NC}"
+  exit 1
 fi
+
+echo -e "${BLUE}ℹ Found Solidity files:${NC}"
+for f in $ALL_SOL_FILES; do
+  echo "    $(basename $f)"
+done
+echo ""
+
+# ─── Step 2: Combined JSON compilation (ABIs + hex bytecode) ───────────
+echo -e "${BLUE}ℹ Running combined-json compilation...${NC}"
+
+# Remove stale combined.json
+rm -f "$CONTRACTS_DIR/combined.json"
+
+resolc $ALL_SOL_FILES \
+  --combined-json abi,bin \
+  -o "$CONTRACTS_DIR/" \
+  --overwrite
+
+if [ ! -f "$CONTRACTS_DIR/combined.json" ]; then
+  echo -e "${RED}✗ combined.json not created — compilation failed${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}✓ combined.json created${NC}"
+echo ""
+
+# ─── Step 3: Binary compilation (PolkaVM .pvm bytecode) ────────────────
+# We must pass ALL .sol files together so imports resolve.
+# resolc outputs: output/<filename>.sol:<ContractName>.pvm for each contract.
+
+echo -e "${BLUE}ℹ Running binary compilation for .pvm bytecode...${NC}"
+
+resolc $ALL_SOL_FILES \
+  --bin \
+  -O3 \
+  --output-dir "$OUTPUT_DIR" \
+  --overwrite
+
+echo -e "${GREEN}✓ Binary compilation complete${NC}"
+echo ""
+
+# ─── Step 4: Rename .pvm files and extract ABIs ───────────────────────
+echo -e "${BLUE}ℹ Processing output files...${NC}"
+
+for name in "${DEPLOY_CONTRACTS[@]}"; do
+  # resolc names output as: <filename>.sol:<ContractName>.pvm
+  PVM_FILE="$OUTPUT_DIR/${name}.sol:${name}.pvm"
+
+  if [ -f "$PVM_FILE" ]; then
+    cp "$PVM_FILE" "$OUTPUT_DIR/${name}.polkavm"
+    SIZE=$(stat -f%z "$OUTPUT_DIR/${name}.polkavm" 2>/dev/null || stat -c%s "$OUTPUT_DIR/${name}.polkavm" 2>/dev/null || echo "?")
+    echo -e "  ${GREEN}✓ ${name}.polkavm  (${SIZE} bytes)${NC}"
+  else
+    # Some contracts might be in a different path format
+    # Try: contracts/<name>.sol:<name>.pvm
+    ALT_PVM="$OUTPUT_DIR/contracts/${name}.sol:${name}.pvm"
+    FOUND=false
+    # Search for any file matching *:${name}.pvm
+    for f in "$OUTPUT_DIR"/*:${name}.pvm; do
+      if [ -f "$f" ]; then
+        cp "$f" "$OUTPUT_DIR/${name}.polkavm"
+        SIZE=$(stat -f%z "$OUTPUT_DIR/${name}.polkavm" 2>/dev/null || stat -c%s "$OUTPUT_DIR/${name}.polkavm" 2>/dev/null || echo "?")
+        echo -e "  ${GREEN}✓ ${name}.polkavm  (${SIZE} bytes) [from $(basename $f)]${NC}"
+        FOUND=true
+        break
+      fi
+    done 2>/dev/null
+    if [ "$FOUND" = false ]; then
+      echo -e "  ${RED}✗ ${name}.pvm NOT FOUND${NC}"
+      echo -e "    Available .pvm files in output/:"
+      ls -1 "$OUTPUT_DIR"/*.pvm 2>/dev/null || echo "      (none)"
+    fi
+  fi
+
+  # Extract ABI from combined.json
+  node -e "
+    const fs = require('fs');
+    const combined = JSON.parse(fs.readFileSync('${CONTRACTS_DIR}/combined.json', 'utf-8'));
+    for (const [key, data] of Object.entries(combined.contracts)) {
+      const contractName = key.split(':').pop();
+      if (contractName === '${name}') {
+        const abi = typeof data.abi === 'string' ? JSON.parse(data.abi) : data.abi;
+        fs.writeFileSync('${ABI_DIR}/${name}.json', JSON.stringify(abi, null, 2));
+        console.log('  ✓ ABI → src/abi/${name}.json');
+        process.exit(0);
+      }
+    }
+    console.error('  ✗ ABI not found for ${name} in combined.json');
+    // List available contracts for debugging
+    console.error('    Available:', Object.keys(combined.contracts).map(k => k.split(':').pop()).join(', '));
+    process.exit(1);
+  " || echo -e "  ${YELLOW}⚠ Could not extract ABI for ${name}${NC}"
+done
+
+# ─── Step 5: Also extract interface ABIs (needed by frontend) ─────────
+# The frontend may import IQNS.json for direct QNS resolver calls
+for iface in IQNS IERC20 IQFLinkPods; do
+  node -e "
+    const fs = require('fs');
+    const combined = JSON.parse(fs.readFileSync('${CONTRACTS_DIR}/combined.json', 'utf-8'));
+    for (const [key, data] of Object.entries(combined.contracts)) {
+      const contractName = key.split(':').pop();
+      if (contractName === '${iface}') {
+        const abi = typeof data.abi === 'string' ? JSON.parse(data.abi) : data.abi;
+        fs.writeFileSync('${ABI_DIR}/${iface}.json', JSON.stringify(abi, null, 2));
+        console.log('  ✓ ABI → src/abi/${iface}.json');
+        process.exit(0);
+      }
+    }
+  " 2>/dev/null || true
+done
+
+# ─── Summary ──────────────────────────────────────────────────────────
+echo ""
+echo -e "${GREEN}=============================================================================${NC}"
+echo -e "${GREEN}  ✓ Compilation complete${NC}"
+echo -e "${GREEN}=============================================================================${NC}"
+echo ""
+
+echo "  Bytecode files:"
+for name in "${DEPLOY_CONTRACTS[@]}"; do
+  if [ -f "$OUTPUT_DIR/${name}.polkavm" ]; then
+    SIZE=$(stat -f%z "$OUTPUT_DIR/${name}.polkavm" 2>/dev/null || stat -c%s "$OUTPUT_DIR/${name}.polkavm" 2>/dev/null || echo "?")
+    echo "    ✓ output/${name}.polkavm  (${SIZE} bytes)"
+  else
+    echo "    ✗ output/${name}.polkavm  MISSING"
+  fi
+done
+
+echo ""
+echo "  Frontend ABIs:"
+for name in "${DEPLOY_CONTRACTS[@]}"; do
+  if [ -f "$ABI_DIR/${name}.json" ]; then
+    echo "    ✓ src/abi/${name}.json"
+  else
+    echo "    ✗ src/abi/${name}.json  MISSING"
+  fi
+done
+echo ""
