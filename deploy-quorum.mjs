@@ -60,7 +60,7 @@ function deployContract(api, deployer, name, artifact, constructorArgs, options)
     const code = artifact.bytecode;
 
     console.log(`  Bytecode: ${Math.round(code.length / 2)} bytes`);
-    console.log(`  Args: ${JSON.stringify(constructorArgs).slice(0, 120)}`);
+    console.log(`  Args: ${constructorArgs.map(a => typeof a === 'bigint' ? a.toString() : a).join(', ')}`);
 
     const tx = api.tx.revive.instantiateWithCode(
       BigInt(0),
