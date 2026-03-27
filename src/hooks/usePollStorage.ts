@@ -34,7 +34,27 @@ export function usePollStorage() {
     setIsLoading(true);
     setError(null);
     try {
-      return await callContract<Poll>(ADDR, ABI, "getPoll", [pollId]);
+      const raw = await callContract<any>(ADDR, ABI, "getPoll", [pollId]);
+      // viem decodes tuples as arrays or objects depending on ABI
+      // Normalize to our Poll interface
+      if (Array.isArray(raw)) {
+        return {
+          id: BigInt(raw[0]),
+          creator: raw[1] as `0x${string}`,
+          question: raw[2] as string,
+          description: raw[3] as string,
+          options: raw[4] as readonly string[],
+          startTime: BigInt(raw[5]),
+          endTime: BigInt(raw[6]),
+          eligibilityType: Number(raw[7]),
+          eligibilityToken: raw[8] as `0x${string}`,
+          eligibilityPodId: BigInt(raw[9]),
+          isListed: Boolean(raw[10]),
+          totalVotes: BigInt(raw[11]),
+        };
+      }
+      // If viem returned named properties, it might already match
+      return raw as Poll;
     } catch (err: any) {
       setError(err.message || "Failed to fetch poll");
       return null;

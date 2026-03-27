@@ -3,8 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { useQNS } from '../hooks/useQNS';
 import { COLORS, FONTS } from '../lib/constants';
-import { callContract } from '../utils/contractCall';
-import { formatEther } from 'viem';
 import { ToastContainer } from './Toast';
 
 export function TopBar() {
@@ -207,27 +205,8 @@ interface MobileMenuProps {
 }
 
 function MobileMenu({ onClose, navLinks, isActive, onNavClick }: MobileMenuProps) {
-  const { address, isConnected, disconnect } = useWallet();
-  const { qnsName, hasQnsName } = useQNS(address);
-  const [balance, setBalance] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchBalance = async () => {
-      if (address && isConnected) {
-        try {
-          // For now, we'll skip balance fetching in the PAPI migration
-          // Balance fetching would need to be implemented via a different method
-          setBalance(null);
-        } catch (err) {
-          console.error('Error fetching balance:', err);
-        }
-      }
-    };
-
-    fetchBalance();
-    const interval = setInterval(fetchBalance, 10000);
-    return () => clearInterval(interval);
-  }, [address, isConnected]);
+  const { address, isConnected, disconnect, qnsName, balance } = useWallet();
+  const { hasQnsName } = useQNS(address);
 
   return (
     <div
@@ -400,30 +379,10 @@ function MobileMenu({ onClose, navLinks, isActive, onNavClick }: MobileMenuProps
 
 // Desktop Wallet Display Component with Balance
 function WalletDisplay() {
-  const { address, isConnected, isConnecting, isCorrectNetwork, connect, disconnect, switchNetwork } = useWallet();
-  const { qnsName, hasQnsName } = useQNS(address);
+  const { address, isConnected, isConnecting, isCorrectNetwork, connect, disconnect, switchNetwork, qnsName, balance } = useWallet();
+  const { hasQnsName } = useQNS(address);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [balance, setBalance] = useState<string | null>(null);
   const [copiedAddress, setCopiedAddress] = useState(false);
-
-  // Fetch balance
-  useEffect(() => {
-    const fetchBalance = async () => {
-      if (address && isConnected) {
-        try {
-          // For now, we'll skip balance fetching in the PAPI migration
-          // Balance fetching would need to be implemented via a different method
-          setBalance(null);
-        } catch (err) {
-          console.error('Error fetching balance:', err);
-        }
-      }
-    };
-
-    fetchBalance();
-    const interval = setInterval(fetchBalance, 10000);
-    return () => clearInterval(interval);
-  }, [address, isConnected]);
 
   const truncateAddress = (addr: string) => {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;

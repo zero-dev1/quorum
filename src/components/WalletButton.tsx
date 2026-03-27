@@ -5,8 +5,8 @@ import { useQNS } from '../hooks/useQNS';
 import { COLORS, FONTS } from '../lib/constants';
 
 export function WalletButton() {
-  const { address, isConnected, isConnecting, isCorrectNetwork, connect, disconnect, switchNetwork } = useWallet();
-  const { qnsName, hasQnsName } = useQNS(address);
+  const { address, isConnected, isConnecting, isCorrectNetwork, connect, disconnect, switchNetwork, qnsName, balance } = useWallet();
+  const { hasQnsName } = useQNS(address);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -116,6 +116,20 @@ export function WalletButton() {
         >
           {hasQnsName ? qnsName : truncateAddress(address!)}
         </span>
+        {balance && (
+          <>
+            <span style={{ color: COLORS.textMuted }}>·</span>
+            <span
+              style={{
+                fontFamily: FONTS.mono,
+                fontSize: '14px',
+                color: COLORS.textSecondary,
+              }}
+            >
+              {balance} QF
+            </span>
+          </>
+        )}
       </button>
 
       {dropdownOpen && (

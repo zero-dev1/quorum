@@ -44,7 +44,20 @@ export function useResultsReader() {
     setIsLoading(true);
     setError(null);
     try {
-      return await callContract<PollResults>(ADDR, ABI, "getPollResults", [pollId]);
+      const raw = await callContract<any>(ADDR, ABI, "getPollResults", [pollId]);
+      if (Array.isArray(raw)) {
+        return {
+          question: raw[0] as string,
+          description: raw[1] as string,
+          options: raw[2] as readonly string[],
+          voteCounts: (raw[3] as any[]).map((v: any) => BigInt(v)),
+          totalVotes: BigInt(raw[4]),
+          percentages: (raw[5] as any[]).map((v: any) => BigInt(v)),
+          leadingOptionIndex: BigInt(raw[6]),
+          isActive: Boolean(raw[7]),
+        } as PollResults;
+      }
+      return raw as PollResults;
     } catch (err: any) {
       setError(err.message || "Failed to fetch poll results");
       return null;
@@ -61,7 +74,23 @@ export function useResultsReader() {
     setIsLoading(true);
     setError(null);
     try {
-      return await callContract<readonly PollSummary[]>(ADDR, ABI, "getPollList", [offset, limit]);
+      const rawList = await callContract<any[]>(ADDR, ABI, "getPollList", [offset, limit]);
+      if (Array.isArray(rawList)) {
+        return rawList.map((item: any) => {
+          if (Array.isArray(item)) {
+            return {
+              id: BigInt(item[0]),
+              question: item[1] as string,
+              creator: item[2] as string,
+              totalVotes: BigInt(item[3]),
+              endTime: BigInt(item[4]),
+              isActive: Boolean(item[5]),
+            };
+          }
+          return item;
+        }) as readonly PollSummary[];
+      }
+      return rawList as readonly PollSummary[];
     } catch (err: any) {
       setError(err.message || "Failed to fetch poll list");
       return [];
@@ -86,7 +115,16 @@ export function useResultsReader() {
   ): Promise<readonly UserVote[]> => {
     if (!isValidAddress(user) || !ADDR) return [];
     try {
-      return await callContract<readonly UserVote[]>(ADDR, ABI, "getUserVotes", [user, offset, limit]);
+      const rawVotes = await callContract<any[]>(ADDR, ABI, "getUserVotes", [user, offset, limit]);
+      if (Array.isArray(rawVotes)) {
+        return rawVotes.map((item: any) => {
+          if (Array.isArray(item)) {
+            return { pollId: BigInt(item[0]), optionIndex: BigInt(item[1]) };
+          }
+          return item;
+        }) as readonly UserVote[];
+      }
+      return rawVotes as readonly UserVote[];
     } catch {
       return [];
     }

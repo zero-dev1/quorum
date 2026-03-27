@@ -135,11 +135,13 @@ export function CreatePoll() {
     setIsConfirming(false);
     setShowConfirmation(false);
 
-    if (result.success && result.pollId !== undefined) {
-      addToast('Poll created successfully', 'success');
-      navigate(`/poll/${result.pollId}`);
+    if (result.success) {
+      addToast('Poll created successfully! Redirecting...', 'success');
+      // Navigate to explore page after a short delay since we don't have the pollId
+      // The user can find their new poll there
+      setTimeout(() => navigate('/explore'), 2000);
     } else {
-      addToast('Transaction failed. Please try again.', 'error');
+      addToast(error || 'Transaction failed. Please try again.', 'error');
       // Keep user on page with form data intact
     }
   };
