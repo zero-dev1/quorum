@@ -37,9 +37,9 @@ const CREATION_FEE     = 100n * 10n ** 18n;   // 100 QF
 const TREASURY_BPS     = 5000;                 // 50%
 const QFLINK_FEE       = 50n * 10n ** 18n;    // 50 QF
 
-// Gas — generous limits; unused weight is refunded
-const DEFAULT_REF_TIME   = 100_000_000_000n;
-const DEFAULT_PROOF_SIZE = 5_000_000n;
+// Gas — conservative defaults for QF Network (0.1s block time)
+const FALLBACK_REF_TIME   = 20_000_000_000n;   // 20 billion — fits within QF's block budget
+const FALLBACK_PROOF_SIZE = 2_000_000n;
 const STORAGE_DEPOSIT    = 0n;   // 0 = unlimited
 
 // Contract deployment order
@@ -84,6 +84,60 @@ function encodeConstructor(abi: any[], args: any[]): `0x${string}` {
   return encodeAbiParameters(ctor.inputs, args);
 }
 
+/**
+ * Estimate gas for an instantiateWithCode call via dry-run.
+ * Falls back to conservative defaults if the runtime doesn't expose the API.
+ */
+async function estimateInstantiateGas(
+  api: ApiPromise,
+  deployer: any,
+  bytecodeHex: string,
+  dataHex: string,
+  value: bigint = 0n,
+): Promise<{ refTime: bigint; proofSize: bigint }> {
+  // Conservative defaults for QF Network (0.1s block time)
+  const FALLBACK = { refTime: FALLBACK_REF_TIME, proofSize: FALLBACK_PROOF_SIZE };
+
+  try {
+    // Check if the runtime exposes ReviveApi.instantiate for dry-runs
+    if (api.call?.reviveApi?.instantiate) {
+      console.log('  Estimating gas via dry-run...');
+
+      const result = await api.call.reviveApi.instantiate(
+        deployer.address,       // origin
+        value,                  // value
+        undefined,              // gas_limit (None = use block max)
+        undefined,              // storage_deposit_limit (None)
+        { type: 'Upload', value: bytecodeHex },  // code
+        dataHex,                // data
+        null,                   // salt
+      );
+
+      const r = result as any;
+      if (r.gasRequired || r.gas_required) {
+        const gas = r.gasRequired || r.gas_required;
+        const refTime = BigInt(gas.refTime?.toString() || gas.ref_time?.toString() || '0');
+        const proofSize = BigInt(gas.proofSize?.toString() || gas.proof_size?.toString() || '0');
+
+        if (refTime > 0n) {
+          // Add 20% buffer (not 50% — block budget is tight on QF)
+          const estimated = {
+            refTime: (refTime * 120n) / 100n,
+            proofSize: (proofSize * 120n) / 100n,
+          };
+          console.log(`  Estimated: refTime=${estimated.refTime}, proofSize=${estimated.proofSize}`);
+          return estimated;
+        }
+      }
+    }
+  } catch (e: any) {
+    console.log(`  Dry-run not available: ${e.message?.slice(0, 80)}`);
+  }
+
+  console.log(`  Using fallback: refTime=${FALLBACK.refTime}, proofSize=${FALLBACK.proofSize}`);
+  return FALLBACK;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // DEPLOY & CALL
 // ═══════════════════════════════════════════════════════════════════
@@ -101,18 +155,19 @@ async function deployContract(
   console.log(`  Bytecode: ${bytecode.length} bytes`);
   console.log(`  Constructor args: ${constructorArgs.length === 0 ? 'none' : JSON.stringify(constructorArgs)}`);
 
-  // Encode constructor data
   const ctorData = encodeConstructor(abi, constructorArgs);
-  const dataHex = ctorData === '0x' ? '0x' : ctorData;
+  const codeHex = `0x${Buffer.from(bytecode).toString('hex')}`;
 
-  // Build the extrinsic
+  // Estimate gas via dry-run or use fallback
+  const gas = await estimateInstantiateGas(api, deployer, codeHex, ctorData, value);
+
   const tx = api.tx.revive.instantiateWithCode(
-    value,                                             // value: Balance
-    { refTime: DEFAULT_REF_TIME, proofSize: DEFAULT_PROOF_SIZE }, // weight_limit: Weight
-    STORAGE_DEPOSIT,                                   // storage_deposit_limit
-    `0x${Buffer.from(bytecode).toString('hex')}`,      // code: Vec<u8>
-    dataHex,                                           // data: Vec<u8>
-    null,                                              // salt: None → CREATE1
+    value,
+    { refTime: gas.refTime, proofSize: gas.proofSize },
+    STORAGE_DEPOSIT,
+    codeHex,
+    ctorData,
+    null,
   );
 
   return new Promise<string>((resolve, reject) => {
@@ -169,18 +224,36 @@ async function callContractWrite(
 ): Promise<void> {
   console.log(`  → ${functionName}(${args.map(a => typeof a === 'bigint' ? a.toString() : a).join(', ')})`);
 
-  const data = encodeFunctionData({
-    abi,
-    functionName,
-    args,
-  });
+  const data = encodeFunctionData({ abi, functionName, args });
+
+  // Estimate gas for the call
+  let gasLimit = { refTime: 5_000_000_000n, proofSize: 500_000n };  // Conservative default for calls
+  try {
+    if (api.call?.reviveApi?.call) {
+      const dryRun = await api.call.reviveApi.call(
+        deployer.address, contractAddress, value, undefined, undefined, data
+      );
+      const d = dryRun as any;
+      const gas = d.gasRequired || d.gas_required;
+      if (gas) {
+        const refTime = BigInt(gas.refTime?.toString() || gas.ref_time?.toString() || '0');
+        const proofSize = BigInt(gas.proofSize?.toString() || gas.proof_size?.toString() || '0');
+        if (refTime > 0n) {
+          gasLimit = {
+            refTime: (refTime * 120n) / 100n,
+            proofSize: (proofSize * 120n) / 100n,
+          };
+        }
+      }
+    }
+  } catch { /* use defaults */ }
 
   const tx = api.tx.revive.call(
-    contractAddress,                                     // dest: H160
-    value,                                               // value
-    { refTime: DEFAULT_REF_TIME, proofSize: DEFAULT_PROOF_SIZE }, // weight_limit
-    STORAGE_DEPOSIT,                                     // storage_deposit_limit
-    data,                                                // data
+    contractAddress,
+    value,
+    { refTime: gasLimit.refTime, proofSize: gasLimit.proofSize },
+    STORAGE_DEPOSIT,
+    data,
   );
 
   return new Promise<void>((resolve, reject) => {
