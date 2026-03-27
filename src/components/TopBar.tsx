@@ -203,7 +203,7 @@ interface MobileMenuProps {
   onClose: () => void;
   navLinks: { path: string; label: string; requiresQns?: boolean }[];
   isActive: (path: string) => boolean;
-  onNavClick: (e: React.MouseEvent, link: typeof navLinks[0]) => void;
+  onNavClick: (e: React.MouseEvent, link: { path: string; label: string; requiresQns?: boolean }) => void;
 }
 
 function MobileMenu({ onClose, navLinks, isActive, onNavClick }: MobileMenuProps) {
