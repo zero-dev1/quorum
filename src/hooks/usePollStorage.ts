@@ -1,7 +1,6 @@
-import { useState, useCallback } from 'react';
-import { getContract } from 'viem';
-import { publicClient } from '../lib/viemClient';
-import { POLL_STORAGE_ADDRESS, POLL_STORAGE_ABI } from '../lib/contracts';
+import { useState, useCallback } from "react";
+import { callContract } from "../utils/contractCall";
+import { POLL_STORAGE_ADDRESS, POLL_STORAGE_ABI } from "../lib/contracts";
 
 interface Poll {
   id: bigint;
@@ -18,39 +17,26 @@ interface Poll {
   totalVotes: bigint;
 }
 
-// Helper to validate Ethereum addresses
 function isValidAddress(address: string | null | undefined): address is `0x${string}` {
   if (!address) return false;
-  if (typeof address !== 'string') return false;
-  if (!address.startsWith('0x')) return false;
-  if (address.length !== 42) return false;
-  const hexRegex = /^0x[0-9a-fA-F]{40}$/;
-  return hexRegex.test(address);
+  return /^0x[0-9a-fA-F]{40}$/.test(address);
 }
 
-const pollStorageContract = POLL_STORAGE_ADDRESS
-  ? getContract({
-      address: POLL_STORAGE_ADDRESS,
-      abi: POLL_STORAGE_ABI,
-      client: publicClient,
-    })
-  : null;
+const ABI = POLL_STORAGE_ABI as unknown as any[];
+const ADDR = POLL_STORAGE_ADDRESS;
 
 export function usePollStorage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const getPoll = useCallback(async (pollId: bigint): Promise<Poll | null> => {
-    if (!pollStorageContract) return null;
-
+    if (!ADDR) return null;
     setIsLoading(true);
     setError(null);
-
     try {
-      const poll = await pollStorageContract.read.getPoll([pollId]);
-      return poll;
+      return await callContract<Poll>(ADDR, ABI, "getPoll", [pollId]);
     } catch (err: any) {
-      setError(err.message || 'Failed to fetch poll');
+      setError(err.message || "Failed to fetch poll");
       return null;
     } finally {
       setIsLoading(false);
@@ -58,76 +44,49 @@ export function usePollStorage() {
   }, []);
 
   const getHasVoted = useCallback(async (pollId: bigint, voter: string): Promise<boolean> => {
-    // Guard: validate address before any contract call
-    if (!isValidAddress(voter)) return false;
-    if (!pollStorageContract) return false;
-
+    if (!isValidAddress(voter) || !ADDR) return false;
     try {
-      return await pollStorageContract.read.getHasVoted([pollId, voter]);
-    } catch (err) {
-      console.error('Error checking if voted:', err);
+      return await callContract<boolean>(ADDR, ABI, "getHasVoted", [pollId, voter]);
+    } catch {
       return false;
     }
   }, []);
 
   const getVoterChoice = useCallback(async (pollId: bigint, voter: string): Promise<bigint | null> => {
-    // Guard: validate address before any contract call
-    if (!isValidAddress(voter)) return null;
-    if (!pollStorageContract) return null;
-
+    if (!isValidAddress(voter) || !ADDR) return null;
     try {
-      return await pollStorageContract.read.getVoterChoice([pollId, voter]);
-    } catch (err) {
-      console.error('Error getting voter choice:', err);
+      return await callContract<bigint>(ADDR, ABI, "getVoterChoice", [pollId, voter]);
+    } catch {
       return null;
     }
   }, []);
 
   const getPollCount = useCallback(async (): Promise<bigint | null> => {
-    if (!pollStorageContract) return null;
-
+    if (!ADDR) return null;
     try {
-      return await pollStorageContract.read.pollCount();
-    } catch (err) {
-      console.error('Error getting poll count:', err);
+      return await callContract<bigint>(ADDR, ABI, "pollCount", []);
+    } catch {
       return null;
     }
   }, []);
 
   const getUserPollsVoted = useCallback(async (user: string): Promise<readonly bigint[]> => {
-    // Guard: validate address before any contract call
-    if (!isValidAddress(user)) return [];
-    if (!pollStorageContract) return [];
-
+    if (!isValidAddress(user) || !ADDR) return [];
     try {
-      return await pollStorageContract.read.getUserPollsVoted([user]);
-    } catch (err) {
-      console.error('Error getting user polls voted:', err);
+      return await callContract<readonly bigint[]>(ADDR, ABI, "getUserPollsVoted", [user]);
+    } catch {
       return [];
     }
   }, []);
 
   const getUserPollsCreated = useCallback(async (user: string): Promise<readonly bigint[]> => {
-    // Guard: validate address before any contract call
-    if (!isValidAddress(user)) return [];
-    if (!pollStorageContract) return [];
-
+    if (!isValidAddress(user) || !ADDR) return [];
     try {
-      return await pollStorageContract.read.getUserPollsCreated([user]);
-    } catch (err) {
-      console.error('Error getting user polls created:', err);
+      return await callContract<readonly bigint[]>(ADDR, ABI, "getUserPollsCreated", [user]);
+    } catch {
       return [];
     }
   }, []);
 
-  return {
-    getPoll,
-    getHasVoted,
-    getVoterChoice,
-    getPollCount,
-    getUserPollsVoted,
-    getUserPollsCreated,
-    isLoading,
-    error,
-  };
+  return { getPoll, getHasVoted, getVoterChoice, getPollCount, getUserPollsVoted, getUserPollsCreated, isLoading, error };
 }

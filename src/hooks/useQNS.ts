@@ -1,136 +1,121 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { namehash } from 'viem/ens';
-import { publicClient } from '../lib/viemClient';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { callContract } from "../utils/contractCall";
 
-// QNS Resolver address — from .env.development (VITE_QNS_RESOLVER_ADDRESS)
-const QNS_RESOLVER_ADDRESS = (import.meta.env.VITE_QNS_RESOLVER_ADDRESS || '') as `0x${string}`;
+const QNS_RESOLVER_ADDRESS = (import.meta.env.VITE_QNS_RESOLVER_ADDRESS || "") as string;
 
-// Warn if resolver address is not set
 if (!QNS_RESOLVER_ADDRESS) {
-  console.warn('[useQns] VITE_QNS_RESOLVER_ADDRESS not set — .qf name resolution will not work');
+  console.warn("[useQNS] VITE_QNS_RESOLVER_ADDRESS not set");
 }
 
-// QNS Resolver ABI — based on the real QNSResolver contract
 const QNS_RESOLVER_ABI = [
   {
-    name: 'reverseResolve',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: '_addr', type: 'address' }],
-    outputs: [{ name: '', type: 'string' }],
+    name: "reverseResolve",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "_addr", type: "address" }],
+    outputs: [{ name: "", type: "string" }],
   },
   {
-    name: 'addr',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'node', type: 'bytes32' }],
-    outputs: [{ name: '', type: 'address' }],
+    name: "addr",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "node", type: "bytes32" }],
+    outputs: [{ name: "", type: "address" }],
   },
   {
-    name: 'name',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'node', type: 'bytes32' }],
-    outputs: [{ name: '', type: 'string' }],
+    name: "name",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "node", type: "bytes32" }],
+    outputs: [{ name: "", type: "string" }],
   },
 ] as const;
 
-// Cache: address → name, with TTL
+// Cache
 const nameCache = new Map<string, { name: string | null; timestamp: number }>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
 
-// Helper to validate Ethereum addresses
 function isValidAddress(address: string | null | undefined): address is `0x${string}` {
   if (!address) return false;
-  if (typeof address !== 'string') return false;
-  if (!address.startsWith('0x')) return false;
-  if (address.length !== 42) return false;
-  // Check for valid hex characters
-  const hexRegex = /^0x[0-9a-fA-F]{40}$/;
-  return hexRegex.test(address);
+  return /^0x[0-9a-fA-F]{40}$/.test(address);
 }
 
-// Clear cache for a specific address (used after name registration)
 export function clearQNSCache(address: string): void {
   if (!isValidAddress(address)) return;
   nameCache.delete(address.toLowerCase());
 }
 
-// Clear the entire QNS cache
 export function clearAllQNSCache(): void {
   nameCache.clear();
 }
 
-// Standalone function to reverse resolve an address → .qf name
 export async function reverseResolve(address: string): Promise<string | null> {
   if (!isValidAddress(address)) return null;
-  if (!QNS_RESOLVER_ADDRESS || !publicClient) return null;
-  
+  if (!QNS_RESOLVER_ADDRESS) return null;
+
   const lower = address.toLowerCase();
-  
-  // Check cache
   const cached = nameCache.get(lower);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.name;
-  }
-  
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.name;
+
   try {
-    const name = await publicClient.readContract({
-      address: QNS_RESOLVER_ADDRESS,
-      abi: QNS_RESOLVER_ABI,
-      functionName: 'reverseResolve',
-      args: [address],
-    });
-    
+    const name = await callContract<string>(
+      QNS_RESOLVER_ADDRESS,
+      QNS_RESOLVER_ABI as unknown as any[],
+      "reverseResolve",
+      [address]
+    );
     const result = name && name.length > 0 ? name : null;
     nameCache.set(lower, { name: result, timestamp: Date.now() });
     return result;
   } catch (err) {
-    console.error('[useQns] reverseResolve error:', err);
+    console.error("[useQNS] reverseResolve error:", err);
     nameCache.set(lower, { name: null, timestamp: Date.now() });
     return null;
   }
 }
 
-// Resolve .qf name → address
 export async function resolveQFName(name: string): Promise<string | null> {
-  if (!QNS_RESOLVER_ADDRESS || !publicClient) return null;
-  if (!name.endsWith('.qf')) return null;
-  
-  const node = namehash(name);
-  
+  if (!QNS_RESOLVER_ADDRESS) return null;
+  if (!name.endsWith(".qf")) return null;
+
+  // Compute namehash manually (same as viem/ens namehash)
+  const { keccak256, encodePacked } = await import("viem");
+  const labels = name.split(".").reverse();
+  let node: `0x${string}` = "0x0000000000000000000000000000000000000000000000000000000000000000";
+  for (const label of labels) {
+    const labelBytes = new TextEncoder().encode(label);
+    const labelHash = keccak256(labelBytes as unknown as `0x${string}`);
+    node = keccak256(encodePacked(["bytes32", "bytes32"], [node, labelHash]));
+  }
+
   try {
-    const addr = await publicClient.readContract({
-      address: QNS_RESOLVER_ADDRESS,
-      abi: QNS_RESOLVER_ABI,
-      functionName: 'addr',
-      args: [node],
-    });
-    
-    return addr === '0x0000000000000000000000000000000000000000' ? null : addr;
+    const addr = await callContract<string>(
+      QNS_RESOLVER_ADDRESS,
+      QNS_RESOLVER_ABI as unknown as any[],
+      "addr",
+      [node]
+    );
+    return addr === "0x0000000000000000000000000000000000000000" ? null : addr;
   } catch (err) {
-    console.error('[useQns] resolveQFName error:', err);
+    console.error("[useQNS] resolveQFName error:", err);
     return null;
   }
 }
 
-// Check if input is a .qf name
 export function isQFName(input: string): boolean {
-  return input.endsWith('.qf') && input.length > 3;
+  return input.endsWith(".qf") && input.length > 3;
 }
 
-// Normalize QF name input: auto-append .qf if needed
 export function normalizeQFName(input: string): string | null {
   const trimmed = input.trim().toLowerCase();
-  if (trimmed.startsWith('0x')) return null; // raw address, no resolution needed
-  if (trimmed.endsWith('.qf')) return trimmed;   // already has .qf
-  return `${trimmed}.qf`;                        // auto-append .qf
+  if (trimmed.startsWith("0x")) return null;
+  if (trimmed.endsWith(".qf")) return trimmed;
+  return `${trimmed}.qf`;
 }
 
-// Format display: show .qf name if available, otherwise truncated address
 export function formatAddress(address: string, qfName?: string | null): string {
   if (qfName) return qfName;
-  if (!isValidAddress(address)) return 'Invalid Address';
+  if (!isValidAddress(address)) return "Invalid Address";
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
@@ -144,28 +129,20 @@ interface UseQNSReturn {
 
 export function useQNS(address: string | null | undefined): UseQNSReturn {
   const [qnsName, setQnsName] = useState<string | null>(null);
-  const [hasQnsName, setHasQnsName] = useState<boolean>(false);
+  const [hasQnsName, setHasQnsName] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  // Use a ref to track if we've already fetched for this address
   const fetchedRef = useRef<string | null>(null);
 
   const fetchQNSName = useCallback(async () => {
-    // Guard: only proceed with valid addresses
     if (!isValidAddress(address)) {
       setQnsName(null);
       setHasQnsName(false);
       fetchedRef.current = null;
       return;
     }
-    
-    // Skip if we already fetched for this address
-    if (fetchedRef.current === address.toLowerCase()) {
-      return;
-    }
+    if (fetchedRef.current === address.toLowerCase()) return;
 
-    // Check cache first
     const cached = nameCache.get(address.toLowerCase());
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       setQnsName(cached.name);
@@ -183,8 +160,8 @@ export function useQNS(address: string | null | undefined): UseQNSReturn {
       setHasQnsName(!!name && name.length > 0);
       fetchedRef.current = address.toLowerCase();
     } catch (err) {
-      console.error('QNS lookup error:', err);
-      setError('Failed to resolve QNS name');
+      console.error("QNS lookup error:", err);
+      setError("Failed to resolve QNS name");
       setQnsName(null);
       setHasQnsName(false);
     } finally {
@@ -203,13 +180,7 @@ export function useQNS(address: string | null | undefined): UseQNSReturn {
     await fetchQNSName();
   }, [address, fetchQNSName]);
 
-  return {
-    qnsName,
-    hasQnsName,
-    isLoading,
-    error,
-    refresh,
-  };
+  return { qnsName, hasQnsName, isLoading, error, refresh };
 }
 
 export default useQNS;

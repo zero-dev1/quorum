@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getContract } from 'viem';
-import { publicClient } from '../lib/viemClient';
+import { callContract } from '../utils/contractCall';
 import { COLORS, FONTS, ERC20_ABI } from '../lib/constants';
 
 interface EligibilityBadgeProps {
@@ -20,12 +19,12 @@ export function EligibilityBadge({
     if (eligibilityType === 2 && eligibilityToken) {
       const fetchTokenSymbol = async () => {
         try {
-          const contract = getContract({
-            address: eligibilityToken as `0x${string}`,
-            abi: ERC20_ABI,
-            client: publicClient,
-          });
-          const symbol = await contract.read.symbol();
+          const symbol = await callContract<string>(
+            eligibilityToken as `0x${string}`,
+            ERC20_ABI as unknown as any[],
+            "symbol",
+            []
+          );
           setTokenSymbol(symbol);
         } catch (err) {
           console.error('Error fetching token symbol:', err);

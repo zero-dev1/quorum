@@ -1,29 +1,18 @@
-import { useState, useCallback } from 'react';
-import { getContract, decodeEventLog } from 'viem';
-import { publicClient, createWalletClientFromWindow } from '../lib/viemClient';
+import { useState, useCallback } from "react";
+import { callContract, writeContract, type TxResult } from "../utils/contractCall";
+import { useWalletStore } from "../stores/walletStore";
 import {
   POLL_CREATION_ADDRESS,
   POLL_CREATION_ABI,
-  POLL_STORAGE_ABI,
-} from '../lib/contracts';
+} from "../lib/contracts";
 
-// Helper to validate Ethereum addresses
 function isValidAddress(address: string | null | undefined): address is `0x${string}` {
   if (!address) return false;
-  if (typeof address !== 'string') return false;
-  if (!address.startsWith('0x')) return false;
-  if (address.length !== 42) return false;
-  const hexRegex = /^0x[0-9a-fA-F]{40}$/;
-  return hexRegex.test(address);
+  return /^0x[0-9a-fA-F]{40}$/.test(address);
 }
 
-const pollCreationContract = POLL_CREATION_ADDRESS
-  ? getContract({
-      address: POLL_CREATION_ADDRESS,
-      abi: POLL_CREATION_ABI,
-      client: publicClient,
-    })
-  : null;
+const ABI = POLL_CREATION_ABI as unknown as any[];
+const ADDR = POLL_CREATION_ADDRESS;
 
 export function usePollCreation() {
   const [isLoading, setIsLoading] = useState(false);
@@ -31,27 +20,19 @@ export function usePollCreation() {
   const [txHash, setTxHash] = useState<string | null>(null);
 
   const getCreationFee = useCallback(async (): Promise<bigint | null> => {
-    if (!pollCreationContract) return null;
-
+    if (!ADDR) return null;
     try {
-      return await pollCreationContract.read.creationFee();
-    } catch (err) {
-      console.error('Error getting creation fee:', err);
+      return await callContract<bigint>(ADDR, ABI, "creationFee", []);
+    } catch {
       return null;
     }
   }, []);
 
   const checkIsExempt = useCallback(async (address: string): Promise<boolean> => {
-    // Guard: validate address before any contract call
-    if (!isValidAddress(address)) {
-      return false;
-    }
-    if (!pollCreationContract) return false;
-
+    if (!isValidAddress(address) || !ADDR) return false;
     try {
-      return await pollCreationContract.read.exemptAddresses([address]);
-    } catch (err) {
-      console.error('Error checking exemption:', err);
+      return await callContract<boolean>(ADDR, ABI, "exemptAddresses", [address]);
+    } catch {
       return false;
     }
   }, []);
@@ -66,8 +47,8 @@ export function usePollCreation() {
     eligibilityPodId: bigint,
     fee: bigint = 0n
   ): Promise<{ success: boolean; pollId?: bigint; hash?: string }> => {
-    if (!pollCreationContract) {
-      setError('Contract not initialized');
+    if (!ADDR) {
+      setError("Contract not initialized");
       return { success: false };
     }
 
@@ -76,72 +57,45 @@ export function usePollCreation() {
     setTxHash(null);
 
     try {
-      const walletClient = createWalletClientFromWindow();
-      const [account] = await walletClient.requestAddresses();
-
-      // Guard: validate account address
-      if (!isValidAddress(account)) {
-        setError('Invalid wallet address');
+      const { ss58Address } = useWalletStore.getState();
+      if (!ss58Address) {
+        setError("Wallet not connected");
         setIsLoading(false);
         return { success: false };
       }
 
-      const hash = await walletClient.writeContract({
-        address: POLL_CREATION_ADDRESS!,
-        abi: POLL_CREATION_ABI,
-        functionName: 'createPoll',
-        args: [
-          question,
-          description,
-          options,
-          durationDays,
-          eligibilityType,
-          isValidAddress(eligibilityToken) ? eligibilityToken : '0x0000000000000000000000000000000000000000',
-          eligibilityPodId,
-        ],
-        account,
-        value: fee, // Send native QF as fee
+      const token = isValidAddress(eligibilityToken)
+        ? eligibilityToken
+        : "0x0000000000000000000000000000000000000000";
+
+      const result: TxResult = await writeContract(
+        ADDR,
+        ABI,
+        "createPoll",
+        [question, description, options, durationDays, eligibilityType, token, eligibilityPodId],
+        ss58Address,
+        fee
+      );
+
+      setTxHash(result.txHash);
+
+      // Wait for confirmation in background
+      result.confirmation.then((conf) => {
+        if (!conf.confirmed) {
+          console.warn("createPoll tx not confirmed:", conf.error);
+        }
       });
 
-      setTxHash(hash);
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-      let pollId: bigint | undefined;
-      if (receipt.logs.length > 0) {
-        try {
-          const pollCreatedEvent = receipt.logs.map(log => {
-            try {
-              return decodeEventLog({
-                abi: POLL_STORAGE_ABI,
-                data: log.data,
-                topics: log.topics,
-              });
-            } catch { return null; }
-          }).find(event => event?.eventName === 'PollCreated');
-          
-          if (pollCreatedEvent && 'args' in pollCreatedEvent && pollCreatedEvent.args && typeof pollCreatedEvent.args === 'object' && 'pollId' in pollCreatedEvent.args) {
-            pollId = pollCreatedEvent.args.pollId as bigint;
-          }
-        } catch (e) {
-          console.error('Error decoding event log:', e);
-        }
-      }
-
       setIsLoading(false);
-      return { success: true, pollId, hash };
+      // Note: pollId extraction from events is not available via PAPI broadcast pattern.
+      // The page should poll for the new poll after success.
+      return { success: true, hash: result.txHash };
     } catch (err: any) {
       setIsLoading(false);
-      setError(err.message || 'Failed to create poll');
+      setError(err.message || "Failed to create poll");
       return { success: false };
     }
   }, []);
 
-  return {
-    getCreationFee,
-    checkIsExempt,
-    createPoll,
-    isLoading,
-    error,
-    txHash,
-  };
+  return { getCreationFee, checkIsExempt, createPoll, isLoading, error, txHash };
 }

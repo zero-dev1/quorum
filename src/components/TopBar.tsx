@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { useQNS } from '../hooks/useQNS';
 import { COLORS, FONTS } from '../lib/constants';
-import { publicClient } from '../lib/viemClient';
+import { callContract } from '../utils/contractCall';
 import { formatEther } from 'viem';
 import { ToastContainer } from './Toast';
 
@@ -215,10 +215,9 @@ function MobileMenu({ onClose, navLinks, isActive, onNavClick }: MobileMenuProps
     const fetchBalance = async () => {
       if (address && isConnected) {
         try {
-          const bal = await publicClient.getBalance({ address: address as `0x${string}` });
-          const formatted = formatEther(bal);
-          const num = parseFloat(formatted);
-          setBalance(num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+          // For now, we'll skip balance fetching in the PAPI migration
+          // Balance fetching would need to be implemented via a different method
+          setBalance(null);
         } catch (err) {
           console.error('Error fetching balance:', err);
         }
@@ -412,10 +411,9 @@ function WalletDisplay() {
     const fetchBalance = async () => {
       if (address && isConnected) {
         try {
-          const bal = await publicClient.getBalance({ address: address as `0x${string}` });
-          const formatted = formatEther(bal);
-          const num = parseFloat(formatted);
-          setBalance(num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+          // For now, we'll skip balance fetching in the PAPI migration
+          // Balance fetching would need to be implemented via a different method
+          setBalance(null);
         } catch (err) {
           console.error('Error fetching balance:', err);
         }
