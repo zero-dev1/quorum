@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useWallet } from '../hooks/useWallet';
 import { useQNS } from '../hooks/useQNS';
 import { usePollStorage } from '../hooks/usePollStorage';
@@ -9,7 +10,9 @@ import { VotingCard } from '../components/VotingCard';
 import { ResultsCard } from '../components/ResultsCard';
 import { EligibilityBadge } from '../components/EligibilityBadge';
 import { QNSName } from '../components/QNSName';
+import { PageTransition } from '../components/PageTransition';
 import { COLORS, FONTS } from '../lib/constants';
+import { MOTION } from '../lib/motion';
 
 interface Poll {
   id: bigint;
@@ -149,7 +152,8 @@ export function PollDetail() {
   }
 
   return (
-    <div style={{ padding: '88px 24px 48px', minHeight: '100vh', overflowX: 'hidden' }}>
+    <PageTransition>
+      <div style={{ padding: '88px 24px 48px', minHeight: '100vh', overflowX: 'hidden' }}>
       <div
         className="poll-detail-grid"
         style={{
@@ -338,14 +342,23 @@ export function PollDetail() {
             </div>
 
             {voters.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-                {voters.map((voter) => (
-                  <div
+              <motion.div
+                initial="initial"
+                animate="animate"
+                variants={{
+                  animate: { transition: { staggerChildren: 0.05 } },
+                  initial: {},
+                }}
+                style={{ display: 'flex', flexDirection: 'column', gap: '0' }}
+              >
+                {voters.map((voter, index) => (
+                  <motion.div
                     key={voter}
+                    variants={MOTION.stagger.item}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '8px',
+                      justifyContent: 'space-between',
                       padding: '12px 0',
                       borderBottom: `1px solid ${COLORS.border}`,
                     }}
@@ -354,15 +367,15 @@ export function PollDetail() {
                     <span
                       style={{
                         fontFamily: FONTS.body,
-                        fontSize: '14px',
+                        fontSize: '13px',
                         color: COLORS.textSecondary,
                       }}
                     >
-                      voted
+                      Voted
                     </span>
-                  </div>
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             ) : (
               <p
                 style={{
@@ -412,43 +425,71 @@ export function PollDetail() {
                   </a>
                 </p>
               ) : (
-                <>
-                  <VotingCard
-                    pollId={pollId}
-                    options={[...poll.options]}
-                    question={poll.question}
-                    isEligible={isEligible}
-                    eligibilityReason={eligibilityReason}
-                    onVoteSuccess={() => {
-                      setHasVoted(true);
-                      setRefreshTrigger(prev => prev + 1);
-                    }}
-                  />
-                  <button
-                    onClick={() => setShowResults(!showResults)}
-                    style={{
-                      marginTop: '16px',
-                      padding: '0',
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      fontFamily: FONTS.body,
-                      fontSize: '14px',
-                      color: COLORS.primary,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {showResults ? 'Hide results' : 'Peek at results'}
-                  </button>
-                </>
+                <AnimatePresence mode="wait">
+                  {isActive && !hasVoted && isConnected && hasQnsName && isEligible ? (
+                    <motion.div
+                      key="voting"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.25 }}
+                    >
+                      <VotingCard
+                        pollId={pollId}
+                        options={[...poll.options]}
+                        question={poll.question}
+                        isEligible={isEligible}
+                        eligibilityReason={eligibilityReason}
+                        onVoteSuccess={() => {
+                          setHasVoted(true);
+                          setRefreshTrigger(prev => prev + 1);
+                        }}
+                      />
+                      <button
+                        onClick={() => setShowResults(!showResults)}
+                        style={{
+                          marginTop: '16px',
+                          padding: '0',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          fontFamily: FONTS.body,
+                          fontSize: '14px',
+                          color: COLORS.primary,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {showResults ? 'Hide results' : 'Peek at results'}
+                      </button>
+                    </motion.div>
+                  ) : (hasVoted || !isActive) ? (
+                    <motion.div
+                      key="results"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: 0.1 }}
+                    >
+                      <ResultsCard pollId={pollId} isActive={isActive} />
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
               )}
             </>
           ) : null}
 
-          {(showResults || hasVoted || !isActive) && (
-            <div style={{ marginTop: isActive && !hasVoted ? '16px' : 0 }}>
-              <ResultsCard pollId={pollId} isActive={isActive} />
-            </div>
-          )}
+          <AnimatePresence>
+            {showResults && !hasVoted && isActive && (
+              <motion.div
+                key="peek-results"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+                style={{ overflow: 'hidden', marginTop: '16px' }}
+              >
+                <ResultsCard pollId={pollId} isActive={isActive} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -469,6 +510,7 @@ export function PollDetail() {
           }
         }
       `}</style>
-    </div>
+      </div>
+    </PageTransition>
   );
 }

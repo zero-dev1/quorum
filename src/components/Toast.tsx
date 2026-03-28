@@ -1,114 +1,85 @@
-import React, { useEffect, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
+// src/components/Toast.tsx
+import { useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useToastStore } from '../stores/toastStore';
 import { COLORS, FONTS } from '../lib/constants';
+import { MOTION } from '../lib/motion';
 
-interface ToastProps {
-  message: string | React.ReactNode;
-  type: 'success' | 'error';
-  onClose: () => void;
-  duration?: number;
-}
-
-export function Toast({ message, type, onClose, duration = 5000 }: ToastProps) {
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    setIsVisible(true);
-    const timer = setTimeout(() => {
-      setIsVisible(false);
-      setTimeout(onClose, 300);
-    }, duration);
-
-    return () => clearTimeout(timer);
-  }, [duration, onClose]);
+export function ToastContainer() {
+  const { toasts, removeToast } = useToastStore();
 
   return (
     <div
       style={{
-        backgroundColor: COLORS.surface,
-        borderLeft: `4px solid ${type === 'success' ? COLORS.success : COLORS.error}`,
-        padding: '16px 24px',
-        minWidth: '280px',
-        maxWidth: '400px',
-        opacity: isVisible ? 1 : 0,
-        transform: isVisible ? 'translateY(0)' : 'translateY(-10px)',
-        transition: 'opacity 200ms ease, transform 200ms ease',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+        position: 'fixed',
+        top: '80px',
+        right: '24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        zIndex: 10000,
+        pointerEvents: 'none',
       }}
     >
-      <p
-        style={{
-          fontFamily: FONTS.body,
-          fontSize: '14px',
-          fontWeight: 400,
-          color: COLORS.textPrimary,
-          margin: 0,
-        }}
-      >
-        {message}
-      </p>
+      <AnimatePresence>
+        {toasts.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onDismiss={() => removeToast(toast.id)} />
+        ))}
+      </AnimatePresence>
     </div>
   );
 }
 
-interface ToastContainerProps {
-  toasts?: Array<{ id: string; message: string | React.ReactNode; type: 'success' | 'error' }>;
-  onClose?: (id: string) => void;
-}
+function ToastItem({ toast, onDismiss }: { toast: any; onDismiss: () => void }) {
+  const duration = toast.duration || 5000;
 
-export interface ToastHandle {
-  addToast: (message: string | React.ReactNode, type: 'success' | 'error') => void;
-}
+  useEffect(() => {
+    const timer = setTimeout(onDismiss, duration);
+    return () => clearTimeout(timer);
+  }, [duration, onDismiss]);
 
-export const ToastContainer = forwardRef<ToastHandle, ToastContainerProps>(
-  ({ toasts: externalToasts, onClose: externalOnClose }, ref) => {
-    const [internalToasts, setInternalToasts] = useState<Array<{ id: string; message: string | React.ReactNode; type: 'success' | 'error' }>>([]);
-    
-    const isControlled = externalToasts !== undefined;
-    const toasts = isControlled ? externalToasts! : internalToasts;
-    
-    const removeToast = useCallback((id: string) => {
-      if (isControlled && externalOnClose) {
-        externalOnClose(id);
-      } else {
-        setInternalToasts(prev => prev.filter(t => t.id !== id));
-      }
-    }, [isControlled, externalOnClose]);
-    
-    const addToast = useCallback((message: string | React.ReactNode, type: 'success' | 'error') => {
-      const id = Math.random().toString(36).substring(7);
-      setInternalToasts(prev => [...prev, { id, message, type }]);
-    }, []);
-    
-    useImperativeHandle(ref, () => ({
-      addToast,
-    }), [addToast]);
+  const accentColor =
+    toast.type === 'success' ? COLORS.success :
+    toast.type === 'error' ? COLORS.error :
+    COLORS.warning;
 
-    return (
-      <div
+  return (
+    <motion.div
+      layout
+      initial={MOTION.toast.initial}
+      animate={MOTION.toast.animate}
+      exit={MOTION.toast.exit}
+      transition={MOTION.toast.transition}
+      style={{
+        backgroundColor: COLORS.surface,
+        border: `1px solid ${COLORS.border}`,
+        borderLeft: `3px solid ${accentColor}`,
+        padding: '14px 20px 10px',
+        minWidth: '300px',
+        maxWidth: '420px',
+        pointerEvents: 'auto',
+        cursor: 'pointer',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+      onClick={onDismiss}
+    >
+      <p style={{ fontFamily: FONTS.body, fontSize: '14px', color: COLORS.textPrimary, margin: 0 }}>
+        {toast.message}
+      </p>
+      {/* Progress bar */}
+      <motion.div
+        initial={{ width: '100%' }}
+        animate={{ width: '0%' }}
+        transition={{ duration: duration / 1000, ease: 'linear' }}
         style={{
-          position: 'fixed',
-          top: '80px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          zIndex: 1000,
-          pointerEvents: 'none',
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          height: '2px',
+          backgroundColor: accentColor,
         }}
-      >
-        {toasts.map((toast) => (
-          <div key={toast.id} style={{ pointerEvents: 'auto' }}>
-            <Toast
-              message={toast.message}
-              type={toast.type}
-              onClose={() => removeToast(toast.id)}
-            />
-          </div>
-        ))}
-      </div>
-    );
-  }
-);
-
-ToastContainer.displayName = 'ToastContainer';
+      />
+    </motion.div>
+  );
+}

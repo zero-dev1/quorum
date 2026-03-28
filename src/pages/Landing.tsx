@@ -1,261 +1,299 @@
-import { useEffect, useRef, useState } from 'react';
+// src/pages/Landing.tsx
+import { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { motion, useInView, useAnimation } from 'framer-motion';
+import { PortalTransition, triggerPortal } from '../components/PortalTransition';
 import { useResultsReader } from '../hooks/useResultsReader';
-import { PollCard } from '../components/PollCard';
 import { COLORS, FONTS } from '../lib/constants';
+import { MOTION, prefersReducedMotion } from '../lib/motion';
 
+// ── Animated counter (scroll-triggered) ──
 function AnimatedCounter({ value, suffix = '' }: { value: number; suffix?: string }) {
-  const [count, setCount] = useState(0);
-  const [isVisible, setIsVisible] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
+  const isInView = useInView(ref, { once: true, margin: '-50px' });
+  const [count, setCount] = useState(0);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (ref.current) {
-      observer.observe(ref.current);
+    if (!isInView) return;
+    
+    if (prefersReducedMotion()) {
+      setCount(value);
+      return;
     }
+    
+    const duration = 800;
+    const start = performance.now();
+    function tick(now: number) {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.floor(value * eased));
+      if (progress < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }, [isInView, value]);
 
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!isVisible) return;
-
-    const duration = 1500;
-    const startTime = Date.now();
-
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const easeOut = 1 - Math.pow(1 - progress, 3);
-      setCount(Math.floor(value * easeOut));
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
-    };
-
-    requestAnimationFrame(animate);
-  }, [isVisible, value]);
+  if (prefersReducedMotion()) {
+    return (
+      <span ref={ref} style={{ fontFamily: FONTS.mono, fontSize: 'clamp(28px, 4vw, 40px)', color: COLORS.primary }}>
+        {value.toLocaleString()}{suffix}
+      </span>
+    );
+  }
 
   return (
-    <span ref={ref}>
+    <span ref={ref} style={{ fontFamily: FONTS.mono, fontSize: 'clamp(28px, 4vw, 40px)', color: COLORS.primary }}>
       {count.toLocaleString()}{suffix}
     </span>
   );
 }
 
-function FadeInSection({ children }: { children: React.ReactNode }) {
-  const [isVisible, setIsVisible] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (ref.current) {
-      observer.observe(ref.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
+// ── Word-by-word hero text ──
+function HeroHeadline() {
+  const words = ['Every', 'Vote.', 'On-Chain.', 'Final.'];
 
   return (
-    <div
-      ref={ref}
+    <h1
       style={{
-        opacity: isVisible ? 1 : 0,
-        transform: isVisible ? 'translateY(0)' : 'translateY(20px)',
-        transition: 'opacity 600ms ease, transform 600ms ease',
+        fontFamily: FONTS.headline,
+        fontSize: 'clamp(48px, 7vw, 88px)',
+        fontWeight: 800,
+        color: COLORS.textPrimary,
+        margin: 0,
+        letterSpacing: '-0.03em',
+        lineHeight: 1.05,
       }}
     >
-      {children}
-    </div>
+      {words.map((word, i) => (
+        <motion.span
+          key={i}
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{
+            delay: 0.15 + i * 0.18,
+            duration: 0.5,
+            ease: [0.25, 0.1, 0.25, 1],
+          }}
+          style={{
+            display: 'inline-block',
+            marginRight: '0.25em',
+            // The period on "Final." gets a spring overshoot
+            ...(word === 'Final.'
+              ? {} // the spring is in the transition
+              : {}),
+          }}
+        >
+          {word}
+        </motion.span>
+      ))}
+    </h1>
   );
 }
 
-interface PollPreview {
-  id: bigint;
-  creator: string;
-  endTime: bigint;
-}
-
+// ── Main Landing component ──
 export function Landing() {
-  const { getActivePollCount, getPollList } = useResultsReader();
-  const [activePolls, setActivePolls] = useState<bigint>(0n);
-  const [previewPolls, setPreviewPolls] = useState<PollPreview[]>([]);
+  const { getActivePollCount } = useResultsReader();
+  const [activePolls, setActivePolls] = useState(0);
 
   useEffect(() => {
-    const fetchStats = async () => {
-      const count = await getActivePollCount();
-      if (count !== null) setActivePolls(count);
+    getActivePollCount().then((count) => {
+      if (count !== null) setActivePolls(Number(count));
+    });
+  }, [getActivePollCount]);
 
-      const polls = await getPollList(0n, 3n);
-      setPreviewPolls(polls.map((p) => ({ id: p.id, creator: p.creator, endTime: p.endTime })));
-    };
-    fetchStats();
-  }, [getActivePollCount, getPollList]);
+  const handleEnter = (e: React.MouseEvent) => {
+    e.preventDefault();
+    triggerPortal();
+  };
 
   return (
-    <div style={{ backgroundColor: COLORS.background, minHeight: '100vh', overflowX: 'hidden' }}>
-      {/* Hero Section */}
-      <section
-        style={{
-          padding: '120px 24px 80px',
-        }}
-      >
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <h1
+    <PortalTransition>
+      <div style={{ backgroundColor: COLORS.background, minHeight: '100vh' }}>
+        {/* ── Minimal TopBar for Landing ── */}
+        <header
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '64px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 24px',
+            zIndex: 50,
+            // No border — clean
+          }}
+        >
+          <span
             style={{
               fontFamily: FONTS.headline,
-              fontSize: 'clamp(48px, 6vw, 72px)',
+              fontSize: '18px',
               fontWeight: 700,
               color: COLORS.textPrimary,
-              margin: '0 0 24px 0',
-              letterSpacing: '-0.02em',
-              textAlign: 'left',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
             }}
           >
-            Every Vote.<br />On-Chain. Final.
-          </h1>
-          <p
+            QUORUM
+          </span>
+          <Link
+            to="/about"
             style={{
               fontFamily: FONTS.body,
-              fontSize: '20px',
-              fontWeight: 400,
+              fontSize: '14px',
               color: COLORS.textSecondary,
-              margin: '0 0 40px 0',
+              textDecoration: 'none',
+            }}
+          >
+            About
+          </Link>
+        </header>
+
+        {/* ── Hero Section ── */}
+        <section
+          style={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            padding: '0 24px',
+            maxWidth: '1200px',
+            margin: '0 auto',
+          }}
+        >
+          <HeroHeadline />
+
+          {/* Subtitle */}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1.1, duration: 0.6 }}
+            style={{
+              fontFamily: FONTS.body,
+              fontSize: 'clamp(16px, 2vw, 20px)',
+              color: COLORS.textSecondary,
               maxWidth: '560px',
-              textAlign: 'left',
+              margin: '24px 0 40px 0',
               lineHeight: 1.6,
             }}
           >
-            Create polls. Cast votes. See results. All on-chain, all permanent. Powered by QF Network&apos;s 100ms blocks and negligible fees.
-          </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'flex-start' }}>
-            <Link
-              to="/explore"
+            Create polls. Cast votes. See results. All on-chain, all permanent.
+            Powered by QF Network.
+          </motion.p>
+
+          {/* CTA Buttons */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.4, duration: 0.5 }}
+            style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}
+          >
+            <button
+              onClick={handleEnter}
               style={{
-                padding: '16px 32px',
+                padding: '16px 40px',
                 backgroundColor: COLORS.primary,
+                border: 'none',
                 color: '#FFFFFF',
                 fontFamily: FONTS.body,
                 fontSize: '16px',
                 fontWeight: 600,
-                textDecoration: 'none',
+                cursor: 'pointer',
                 transition: 'background-color 150ms ease',
-                borderRadius: '0px',
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = COLORS.primaryHover;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = COLORS.primary;
-              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.backgroundColor = COLORS.primaryHover)
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor = COLORS.primary)
+              }
             >
-              Launch App
-            </Link>
+              Enter QUORUM
+            </button>
             <Link
               to="/about"
               style={{
-                padding: '16px 32px',
+                padding: '16px 40px',
                 backgroundColor: 'transparent',
                 border: `1px solid ${COLORS.border}`,
                 color: COLORS.textPrimary,
                 fontFamily: FONTS.body,
                 fontSize: '16px',
-                fontWeight: 400,
                 textDecoration: 'none',
                 transition: 'border-color 150ms ease',
-                borderRadius: '0px',
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = COLORS.primary;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = COLORS.border;
-              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.borderColor = COLORS.primary)
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.borderColor = COLORS.border)
+              }
             >
               How It Works
             </Link>
-          </div>
-        </div>
-      </section>
+          </motion.div>
+        </section>
 
-      {/* Stats Ticker */}
-      <section style={{ padding: '0', borderTop: `1px solid ${COLORS.border}`, borderBottom: `1px solid ${COLORS.border}` }}>
-        <div
-          className="stats-grid"
+        {/* ── Stats Ticker ── */}
+        <section
           style={{
-            maxWidth: '1200px',
-            margin: '0 auto',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            borderTop: `1px solid ${COLORS.border}`,
+            borderBottom: `1px solid ${COLORS.border}`,
           }}
         >
-          {[
-            { value: Number(activePolls), label: 'ACTIVE POLLS' },
-            { value: 0, label: 'TOTAL VOTES CAST' },
-            { value: 0, label: 'UNIQUE VOTERS' },
-            { value: 0, label: 'POLLS CREATED' },
-          ].map((stat, index) => (
-            <div
-              key={index}
-              style={{
-                textAlign: 'center',
-                padding: '32px 24px',
-                borderRight: index < 3 ? `1px solid ${COLORS.border}` : 'none',
-              }}
-            >
+          <div
+            className="stats-grid-landing"
+            style={{
+              maxWidth: '1200px',
+              margin: '0 auto',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+            }}
+          >
+            {[
+              { value: activePolls, label: 'ACTIVE POLLS' },
+              { value: 0, label: 'TOTAL VOTES' },
+              { value: 0, label: 'UNIQUE VOTERS' },
+            ].map((stat, i) => (
               <div
+                key={i}
                 style={{
-                  fontFamily: FONTS.mono,
-                  fontSize: '36px',
-                  fontWeight: 400,
-                  color: COLORS.primary,
-                  marginBottom: '8px',
+                  textAlign: 'center',
+                  padding: '40px 24px',
+                  borderRight: i < 2 ? `1px solid ${COLORS.border}` : 'none',
                 }}
               >
-                <AnimatedCounter value={stat.value} />
+                <div
+                  style={{
+                    fontFamily: FONTS.mono,
+                    fontSize: 'clamp(28px, 4vw, 40px)',
+                    color: COLORS.primary,
+                    marginBottom: '8px',
+                  }}
+                >
+                  <AnimatedCounter value={stat.value} />
+                </div>
+                <div
+                  style={{
+                    fontFamily: FONTS.mono,
+                    fontSize: '11px',
+                    color: COLORS.textSecondary,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                  }}
+                >
+                  {stat.label}
+                </div>
               </div>
-              <div
-                style={{
-                  fontFamily: FONTS.mono,
-                  fontSize: '12px',
-                  fontWeight: 400,
-                  color: COLORS.textSecondary,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                {stat.label}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
 
-      {/* How It Works */}
-      <section style={{ padding: '96px 24px' }}>
-        <FadeInSection>
+        {/* ── How It Works ── */}
+        <section style={{ padding: '96px 24px' }}>
           <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <h2
+            <motion.h2
+              {...MOTION.scrollReveal}
               style={{
                 fontFamily: FONTS.headline,
                 fontSize: '32px',
@@ -266,7 +304,8 @@ export function Landing() {
               }}
             >
               How It Works
-            </h2>
+            </motion.h2>
+
             <div
               style={{
                 display: 'grid',
@@ -278,27 +317,55 @@ export function Landing() {
                 {
                   step: '01',
                   title: 'Get Your .qf Name',
-                  description: 'Register a QNS name to create polls and establish your on-chain identity.',
+                  desc: 'Register a QNS name to create polls and establish your on-chain identity.',
                 },
                 {
                   step: '02',
                   title: 'Create a Poll',
-                  description: 'Set your question, options, duration, and who can vote. Pay 100 QF.',
+                  desc: 'Set your question, options, duration, and who can vote. Pay 100 QF.',
                 },
                 {
                   step: '03',
                   title: 'Vote On-Chain',
-                  description: 'Cast your vote as a permanent transaction. Every vote is recorded forever.',
+                  desc: 'Cast your vote as a permanent transaction. Every vote is recorded forever.',
                 },
-              ].map((item, index) => (
-                <div
-                  key={index}
+              ].map((item, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: '-40px' }}
+                  transition={{
+                    delay: i * 0.1,
+                    duration: 0.5,
+                    ease: [0.25, 0.1, 0.25, 1],
+                  }}
                   style={{
                     backgroundColor: COLORS.surface,
                     border: `1px solid ${COLORS.border}`,
                     padding: '32px',
+                    position: 'relative',
+                    overflow: 'hidden',
                   }}
                 >
+                  {/* Watermark step number */}
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '-8px',
+                      right: '16px',
+                      fontFamily: FONTS.mono,
+                      fontSize: '96px',
+                      fontWeight: 400,
+                      color: COLORS.border,
+                      opacity: 0.4,
+                      lineHeight: 1,
+                      userSelect: 'none',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    {item.step}
+                  </span>
                   <span
                     style={{
                       fontFamily: FONTS.mono,
@@ -328,171 +395,24 @@ export function Landing() {
                       lineHeight: 1.6,
                     }}
                   >
-                    {item.description}
+                    {item.desc}
                   </p>
-                </div>
+                </motion.div>
               ))}
             </div>
           </div>
-        </FadeInSection>
-      </section>
+        </section>
 
-      {/* Features */}
-      <section style={{ padding: '96px 24px', borderTop: `1px solid ${COLORS.border}` }}>
-        <FadeInSection>
+        {/* ── Ecosystem ── */}
+        <section
+          style={{
+            padding: '96px 24px',
+            borderTop: `1px solid ${COLORS.border}`,
+          }}
+        >
           <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <h2
-              style={{
-                fontFamily: FONTS.headline,
-                fontSize: '32px',
-                fontWeight: 700,
-                color: COLORS.textPrimary,
-                margin: '0 0 48px 0',
-                textAlign: 'center',
-              }}
-            >
-              Features
-            </h2>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                gap: '32px',
-              }}
-            >
-              {[
-                {
-                  title: 'Permanent Records',
-                  description: 'Every vote is a transaction on QF Network. Results are immutable and transparent.',
-                },
-                {
-                  title: 'Identity Integration',
-                  description: 'Use your .qf name from QNS. Vote and create polls with human-readable identity.',
-                },
-                {
-                  title: 'Flexible Eligibility',
-                  description: 'Open voting, token-gated, or pod-member only. Control who can participate.',
-                },
-                {
-                  title: 'Zero Voting Fees',
-                  description: 'Voting costs only gas (negligible on QF Network). Maximum participation.',
-                },
-              ].map((feature, index) => (
-                <div key={index} style={{ padding: '24px', display: 'flex', gap: '16px' }}>
-                  <div
-                    style={{
-                      width: '4px',
-                      backgroundColor: COLORS.primary,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <div>
-                    <h3
-                      style={{
-                        fontFamily: FONTS.body,
-                        fontSize: '18px',
-                        fontWeight: 600,
-                        color: COLORS.textPrimary,
-                        margin: '0 0 12px 0',
-                      }}
-                    >
-                      {feature.title}
-                    </h3>
-                    <p
-                      style={{
-                        fontFamily: FONTS.body,
-                        fontSize: '15px',
-                        color: COLORS.textSecondary,
-                        margin: 0,
-                        lineHeight: 1.6,
-                      }}
-                    >
-                      {feature.description}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </FadeInSection>
-      </section>
-
-      {/* Active Polls Preview */}
-      <section style={{ padding: '96px 24px', borderTop: `1px solid ${COLORS.border}` }}>
-        <FadeInSection>
-          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '32px',
-              }}
-            >
-              <h2
-                style={{
-                  fontFamily: FONTS.headline,
-                  fontSize: '32px',
-                  fontWeight: 700,
-                  color: COLORS.textPrimary,
-                  margin: 0,
-                }}
-              >
-                Active Polls
-              </h2>
-              <Link
-                to="/explore"
-                style={{
-                  fontFamily: FONTS.body,
-                  fontSize: '14px',
-                  color: COLORS.primary,
-                  textDecoration: 'none',
-                }}
-              >
-                View All &rarr;
-              </Link>
-            </div>
-            <div
-              className="polls-grid"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
-                gap: '24px',
-              }}
-            >
-              {previewPolls.length > 0 ? (
-                previewPolls.map((poll) => (
-                  <PollCard
-                    key={poll.id.toString()}
-                    pollId={poll.id}
-                    creator={poll.creator}
-                    endTime={poll.endTime}
-                  />
-                ))
-              ) : (
-                <p
-                  style={{
-                    fontFamily: FONTS.body,
-                    fontSize: '15px',
-                    color: COLORS.textSecondary,
-                    textAlign: 'center',
-                    padding: '48px 0',
-                    gridColumn: '1 / -1',
-                  }}
-                >
-                  No active polls yet. Be the first to create one!
-                </p>
-              )}
-            </div>
-          </div>
-        </FadeInSection>
-      </section>
-
-      {/* Ecosystem */}
-      <section style={{ padding: '96px 24px', borderTop: `1px solid ${COLORS.border}` }}>
-        <FadeInSection>
-          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <h2
+            <motion.h2
+              {...MOTION.scrollReveal}
               style={{
                 fontFamily: FONTS.headline,
                 fontSize: '36px',
@@ -503,7 +423,7 @@ export function Landing() {
               }}
             >
               One Network. One Identity. One Vote.
-            </h2>
+            </motion.h2>
             <div
               style={{
                 display: 'grid',
@@ -512,26 +432,35 @@ export function Landing() {
               }}
             >
               {[
-                { name: 'QNS', subtitle: 'Your .qf name is your voter ID' },
-                { name: 'QFLink', subtitle: 'Create polls inside pod conversations' },
-                { name: 'QFPad', subtitle: 'Token communities poll their holders' },
-              ].map((item) => (
-                <div
+                { name: 'QNS', subtitle: 'Your .qf name is your voter ID', accent: '#00D179' },
+                { name: 'QFLink', subtitle: 'Create polls inside pod conversations', accent: '#3B82F6' },
+                { name: 'QFPad', subtitle: 'Token communities poll their holders', accent: '#F59E0B' },
+              ].map((item, i) => (
+                <motion.div
                   key={item.name}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1, duration: 0.4 }}
+                  whileHover={{
+                    borderColor: item.accent,
+                    transition: { duration: 0.2 },
+                  }}
                   style={{
                     backgroundColor: COLORS.surface,
                     border: `1px solid ${COLORS.border}`,
-                    padding: '24px',
+                    padding: '32px',
                     textAlign: 'center',
+                    cursor: 'default',
                   }}
                 >
                   <div
                     style={{
                       fontFamily: FONTS.headline,
                       fontSize: '24px',
-                      fontWeight: 600,
+                      fontWeight: 700,
                       color: COLORS.textPrimary,
-                      margin: '0 0 8px 0',
+                      marginBottom: '8px',
                     }}
                   >
                     {item.name}
@@ -540,87 +469,93 @@ export function Landing() {
                     style={{
                       fontFamily: FONTS.body,
                       fontSize: '15px',
-                      fontWeight: 400,
                       color: COLORS.textSecondary,
                     }}
                   >
                     {item.subtitle}
                   </div>
-                </div>
+                </motion.div>
               ))}
             </div>
           </div>
-        </FadeInSection>
-      </section>
+        </section>
 
-      {/* CTA */}
-      <section style={{ padding: '96px 24px', borderTop: `1px solid ${COLORS.border}` }}>
-        <FadeInSection>
-          <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
+        {/* ── Final CTA ── */}
+        <section
+          style={{
+            padding: '96px 24px',
+            borderTop: `1px solid ${COLORS.border}`,
+          }}
+        >
+          <motion.div
+            {...MOTION.scrollReveal}
+            style={{ maxWidth: '640px', margin: '0 auto', textAlign: 'center' }}
+          >
             <h2
               style={{
                 fontFamily: FONTS.headline,
-                fontSize: '40px',
+                fontSize: 'clamp(28px, 4vw, 40px)',
                 fontWeight: 700,
                 color: COLORS.textPrimary,
                 margin: '0 0 16px 0',
               }}
             >
-              Your Chain. Your Voice.
+              Governance belongs on-chain.
             </h2>
             <p
               style={{
                 fontFamily: FONTS.body,
                 fontSize: '16px',
-                fontWeight: 400,
                 color: COLORS.textSecondary,
                 margin: '0 0 32px 0',
               }}
             >
-              QUORUM is free to use. All you need is a wallet and a .qf name.
+              All you need is a wallet and a .qf name.
             </p>
-            <Link
-              to="/explore"
+            <button
+              onClick={handleEnter}
               style={{
-                display: 'inline-block',
-                padding: '16px 32px',
+                padding: '16px 48px',
                 backgroundColor: COLORS.primary,
+                border: 'none',
                 color: '#FFFFFF',
                 fontFamily: FONTS.body,
                 fontSize: '16px',
                 fontWeight: 600,
-                textDecoration: 'none',
+                cursor: 'pointer',
                 transition: 'background-color 150ms ease',
-                borderRadius: '0px',
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = COLORS.primaryHover;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = COLORS.primary;
-              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.backgroundColor = COLORS.primaryHover)
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor = COLORS.primary)
+              }
             >
-              Launch App
-            </Link>
-          </div>
-        </FadeInSection>
-      </section>
+              Enter QUORUM
+            </button>
+          </motion.div>
+        </section>
 
-      <style>{`
-        @media (max-width: 768px) {
-          .stats-grid {
-            grid-template-columns: repeat(2, 1fr) !important;
-          }
-        }
-        @media (max-width: 480px) {
-          .stats-grid {
-            grid-template-columns: 1fr !important;
-          }
-          .polls-grid {
-            grid-template-columns: 1fr !important;
-          }
-        }
-      `}</style>
-    </div>
+        {/* ── Footer (inline for landing, since global footer won't show) ── */}
+        <footer
+          style={{
+            borderTop: `1px solid ${COLORS.border}`,
+            padding: '24px',
+            textAlign: 'center',
+          }}
+        >
+          <span
+            style={{
+              fontFamily: FONTS.mono,
+              fontSize: '12px',
+              color: COLORS.textMuted,
+            }}
+          >
+            © 2026 QUORUM · Built on QF Network
+          </span>
+        </footer>
+      </div>
+    </PortalTransition>
   );
 }

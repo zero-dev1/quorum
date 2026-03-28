@@ -1,12 +1,12 @@
 // src/components/WalletModal.tsx
+import { motion, AnimatePresence } from 'framer-motion';
 import { useWalletStore } from "../stores/walletStore";
 import { getAvailableWallets } from "../utils/wallet";
 import { COLORS, FONTS } from "../lib/constants";
+import { MOTION } from "../lib/motion";
 
 export function WalletModal() {
   const { showWalletModal, connecting, walletError, connectWallet, setShowWalletModal, clearWalletError } = useWalletStore();
-
-  if (!showWalletModal) return null;
 
   const available = getAvailableWallets();
   const hasTalisman = available.includes("talisman");
@@ -18,29 +18,41 @@ export function WalletModal() {
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        backgroundColor: "rgba(0,0,0,0.7)",
-        zIndex: 200,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "24px",
-      }}
-      onClick={() => { if (!connecting) setShowWalletModal(false); }}
-    >
-      <div
-        style={{
-          backgroundColor: COLORS.surface,
-          border: `1px solid ${COLORS.border}`,
-          padding: "32px",
-          maxWidth: "400px",
-          width: "100%",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <AnimatePresence>
+      {showWalletModal && (
+        <motion.div
+          initial={MOTION.modal.overlay.initial}
+          animate={MOTION.modal.overlay.animate}
+          exit={MOTION.modal.overlay.exit}
+          transition={MOTION.modal.overlay.transition}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.7)",
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            zIndex: 200,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+          }}
+          onClick={() => { if (!connecting) setShowWalletModal(false); }}
+        >
+          <motion.div
+            initial={MOTION.modal.content.initial}
+            animate={MOTION.modal.content.animate}
+            exit={MOTION.modal.content.exit}
+            transition={MOTION.modal.content.transition}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: COLORS.surface,
+              border: `1px solid ${COLORS.border}`,
+              padding: "32px",
+              maxWidth: "400px",
+              width: "100%",
+            }}
+          >
         <h2
           style={{
             fontFamily: FONTS.headline,
@@ -91,6 +103,7 @@ export function WalletModal() {
               gap: "12px",
               width: "100%",
               padding: "16px",
+              minHeight: "52px",
               backgroundColor: COLORS.background,
               border: `1px solid ${COLORS.border}`,
               cursor: connecting ? "not-allowed" : "pointer",
@@ -127,6 +140,7 @@ export function WalletModal() {
               gap: "12px",
               width: "100%",
               padding: "16px",
+              minHeight: "52px",
               backgroundColor: COLORS.background,
               border: `1px solid ${COLORS.border}`,
               cursor: connecting ? "not-allowed" : "pointer",
@@ -176,7 +190,9 @@ export function WalletModal() {
               style={{ color: COLORS.primary, textDecoration: "none" }}>SubWallet</a>.
           </p>
         )}
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

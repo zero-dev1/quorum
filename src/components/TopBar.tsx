@@ -3,11 +3,11 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { useQNS } from '../hooks/useQNS';
 import { COLORS, FONTS } from '../lib/constants';
-import { ToastContainer } from './Toast';
+import { useToast } from '../stores/toastStore';
 
 export function TopBar() {
+  const { toast } = useToast();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [toasts, setToasts] = useState<Array<{ id: string; message: string | React.ReactNode; type: 'success' | 'error' }>>([]);
   const location = useLocation();
   const navigate = useNavigate();
   const { address, isConnected } = useWallet();
@@ -21,25 +21,17 @@ export function TopBar() {
 
   const isActive = (path: string) => location.pathname === path;
 
-  const addToast = (message: string | React.ReactNode, type: 'success' | 'error') => {
-    const id = Math.random().toString(36).substring(7);
-    setToasts(prev => [...prev, { id, message, type }]);
-  };
-
-  const removeToast = (id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
-
+  
   const handleNavClick = (e: React.MouseEvent, link: typeof navLinks[0]) => {
     if (link.requiresQns) {
       if (!isConnected) {
         e.preventDefault();
-        addToast('Connect your wallet to create a poll.', 'error');
+        toast('Connect your wallet to create a poll.', 'error');
         return;
       }
       if (!hasQnsName) {
         e.preventDefault();
-        addToast(
+        toast(
           <span>
             You need a .qf name to create polls on QUORUM.{" "}
             <a
@@ -54,8 +46,11 @@ export function TopBar() {
           </span>,
           'error'
         );
+        return;
       }
     }
+    navigate(link.path);
+    setMobileMenuOpen(false);
   };
 
   return (
@@ -149,6 +144,8 @@ export function TopBar() {
               border: 'none',
               cursor: 'pointer',
               padding: '8px',
+              minHeight: '44px',
+              minWidth: '44px',
             }}
           >
             <svg
@@ -177,8 +174,7 @@ export function TopBar() {
         />
       )}
 
-      <ToastContainer toasts={toasts} onClose={removeToast} />
-
+      
       <style>{`
         @media (max-width: 768px) {
           .desktop-nav {

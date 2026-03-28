@@ -1,8 +1,11 @@
+// src/components/PollCard.tsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useResultsReader } from '../hooks/useResultsReader';
 import { QNSName } from './QNSName';
 import { COLORS, FONTS } from '../lib/constants';
+import { MOTION } from '../lib/motion';
 
 interface PollCardProps {
   pollId: bigint;
@@ -22,234 +25,196 @@ export function PollCard({ pollId, creator: initialCreator, endTime: initialEndT
     leadingOptionIndex: bigint;
     isActive: boolean;
   } | null>(null);
-  const [creator, setCreator] = useState<string>(initialCreator || '');
-  const [endTime, setEndTime] = useState<bigint>(initialEndTime || 0n);
+  const [creator] = useState<string>(initialCreator || '');
+  const [endTime] = useState<bigint>(initialEndTime || 0n);
 
   useEffect(() => {
-    const fetchPoll = async () => {
-      const results = await getPollResults(pollId);
-      if (results) {
-        setPoll(results);
-      }
-    };
-    fetchPoll();
+    getPollResults(pollId).then((results) => {
+      if (results) setPoll(results);
+    });
   }, [pollId, getPollResults]);
 
-  const getStatus = () => {
-    if (!poll) return { text: '', color: COLORS.textSecondary, isActive: false };
-
+  const isActive = (() => {
+    if (!poll) return false;
     const now = Date.now() / 1000;
-    const endTimestamp = Number(endTime);
+    const end = Number(endTime);
+    if (end > 0 && now > end) return false;
+    return poll.isActive;
+  })();
 
-    if (endTimestamp > 0 && now > endTimestamp) {
-      return { text: 'ENDED', color: COLORS.textSecondary, isActive: false };
-    } else if (!poll.isActive) {
-      return { text: 'ENDED', color: COLORS.textSecondary, isActive: false };
-    } else {
-      return { text: 'ACTIVE', color: COLORS.success, isActive: true };
-    }
-  };
-
-  const getTimeText = () => {
+  const timeText = (() => {
     if (!poll) return '';
-
     const now = Date.now() / 1000;
-    const endTimestamp = Number(endTime);
-
-    if (endTimestamp === 0) {
-      return poll.isActive ? 'Active' : 'Ended';
-    }
-
-    const diff = Math.max(0, endTimestamp - now);
+    const end = Number(endTime);
+    if (end === 0) return isActive ? 'Active' : 'Ended';
+    const diff = Math.max(0, end - now);
+    if (now > end || !poll.isActive) return 'Ended';
     const days = Math.floor(diff / 86400);
     const hours = Math.floor((diff % 86400) / 3600);
+    return `${days}d ${hours}h left`;
+  })();
 
-    if (now > endTimestamp || !poll.isActive) {
-      return 'Ended';
-    } else {
-      return `Ends in ${days}d ${hours}h`;
-    }
-  };
+  const leadingPct = poll && poll.totalVotes > 0n
+    ? Number(poll.percentages[Number(poll.leadingOptionIndex)]) / 100
+    : 0;
 
-  const formatPercentage = (value: bigint) => {
-    const num = Number(value);
-    return (num / 100).toFixed(1);
-  };
-
-  const status = getStatus();
-  const timeText = getTimeText();
-  const hasResults = poll && poll.totalVotes > 0n;
-  const leadingOption = hasResults && poll.leadingOptionIndex !== undefined
+  const leadingOption = poll && poll.totalVotes > 0n
     ? poll.options[Number(poll.leadingOptionIndex)]
     : null;
-  const leadingPercentage = hasResults && poll.leadingOptionIndex !== undefined
-    ? poll.percentages[Number(poll.leadingOptionIndex)]
-    : 0n;
 
   return (
-    <Link
-      to={`/poll/${pollId}`}
-      style={{
-        display: 'block',
-        backgroundColor: COLORS.surface,
-        border: `1px solid ${COLORS.border}`,
-        padding: '24px',
-        textDecoration: 'none',
-        transition: 'border-color 150ms ease',
-        cursor: 'pointer',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = COLORS.primary;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = COLORS.border;
-      }}
-    >
-      {/* Status */}
-      <div
+    <Link to={`/poll/${pollId}`} style={{ textDecoration: 'none', display: 'block' }}>
+      <motion.div
+        whileHover={MOTION.cardHover}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          marginBottom: '16px',
+          backgroundColor: COLORS.surface,
+          border: `1px solid ${COLORS.border}`,
+          padding: '24px',
+          paddingLeft: '27px', // 3px accent + 24px padding
+          position: 'relative',
+          overflow: 'hidden',
+          cursor: 'pointer',
+          transition: 'border-color 200ms ease',
+        }}
+        onHoverStart={(e: any) => {
+          // Expand left accent bar via CSS — handled by the accent div below
         }}
       >
-        <div
+        {/* Left accent bar */}
+        <motion.div
+          initial={{ height: '3px' }}
+          whileHover={{ height: '100%' }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
           style={{
-            width: '8px',
-            height: '8px',
-            backgroundColor: status.color,
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: '3px',
+            backgroundColor: isActive ? COLORS.primary : COLORS.textMuted,
           }}
         />
-        <span
-          style={{
-            fontFamily: FONTS.mono,
-            fontSize: '12px',
-            fontWeight: 400,
-            textTransform: 'uppercase',
-            color: status.color,
-            letterSpacing: '0.05em',
-          }}
-        >
-          {status.text}
-        </span>
-      </div>
 
-      {/* Question */}
-      <h3
-        style={{
-          fontFamily: FONTS.body,
-          fontSize: '18px',
-          fontWeight: 600,
-          color: COLORS.textPrimary,
-          margin: '0 0 12px 0',
-          lineHeight: 1.4,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-        }}
-      >
-        {poll?.question || 'Loading...'}
-      </h3>
-
-      {/* Creator - only show if we have a valid creator address */}
-      {creator && creator.startsWith('0x') && creator.length === 42 ? (
-        <div
-          style={{
-            marginBottom: '12px',
-          }}
-        >
-          <span style={{ fontFamily: FONTS.mono, fontSize: '13px', color: COLORS.textSecondary }}>
-            by <QNSName address={creator} />
+        {/* Status row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+          <div
+            style={{
+              width: '6px',
+              height: '6px',
+              backgroundColor: isActive ? COLORS.success : COLORS.textMuted,
+              // Pulsing dot for active polls
+              animation: isActive ? 'activePulse 2s ease-in-out infinite' : 'none',
+            }}
+          />
+          <span
+            style={{
+              fontFamily: FONTS.mono,
+              fontSize: '11px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: isActive ? COLORS.success : COLORS.textMuted,
+            }}
+          >
+            {isActive ? 'Active' : 'Ended'}
+          </span>
+          <span
+            style={{
+              fontFamily: FONTS.mono,
+              fontSize: '11px',
+              color: COLORS.textMuted,
+              marginLeft: 'auto',
+            }}
+          >
+            {timeText}
           </span>
         </div>
-      ) : null}
 
-      {/* Stats */}
-      <div
-        style={{
-          marginBottom: '16px',
-        }}
-      >
-        <span
+        {/* Question */}
+        <h3
           style={{
-            fontFamily: FONTS.mono,
-            fontSize: '13px',
-            color: COLORS.textSecondary,
+            fontFamily: FONTS.headline,
+            fontSize: 'clamp(16px, 1.5vw, 18px)',
+            fontWeight: 600,
+            color: COLORS.textPrimary,
+            margin: '0 0 8px 0',
+            lineHeight: 1.4,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
           }}
         >
-          {poll ? `${poll.totalVotes.toString()} votes · ${timeText}` : 'Loading...'}
-        </span>
-      </div>
+          {poll?.question || 'Loading...'}
+        </h3>
 
-      {/* Leading Option with Progress Bar */}
-      {hasResults && leadingOption && (
-        <div>
+        {/* Creator + vote count */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+          {creator && creator.startsWith('0x') && creator.length === 42 && (
+            <span style={{ fontFamily: FONTS.mono, fontSize: '13px', color: COLORS.textSecondary }}>
+              <QNSName address={creator} linkToProfile={false} />
+            </span>
+          )}
+          {poll && (
+            <span style={{ fontFamily: FONTS.mono, fontSize: '13px', color: COLORS.textMuted }}>
+              {poll.totalVotes.toString()} votes
+            </span>
+          )}
+        </div>
+
+        {/* Leading option bar */}
+        {leadingOption && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span
+                style={{
+                  fontFamily: FONTS.body,
+                  fontSize: '13px',
+                  color: COLORS.textSecondary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: '70%',
+                }}
+              >
+                {leadingOption}
+              </span>
+              <span style={{ fontFamily: FONTS.mono, fontSize: '13px', color: COLORS.primary }}>
+                {leadingPct.toFixed(1)}%
+              </span>
+            </div>
+            <div style={{ height: '3px', backgroundColor: COLORS.border }}>
+              <motion.div
+                initial={{ width: '0%' }}
+                animate={{ width: `${Math.min(leadingPct, 100)}%` }}
+                transition={{ duration: 0.6, delay: 0.1, ease: [0.25, 0.1, 0.25, 1] }}
+                style={{ height: '100%', backgroundColor: COLORS.primary }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* User vote indicator */}
+        {userVote && poll && (
           <div
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '8px',
+              fontFamily: FONTS.mono,
+              fontSize: '12px',
+              color: COLORS.primary,
+              marginTop: '12px',
             }}
           >
-            <span
-              style={{
-                fontFamily: FONTS.body,
-                fontSize: '14px',
-                fontWeight: 400,
-                color: COLORS.textSecondary,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                maxWidth: '70%',
-              }}
-            >
-              {leadingOption}
-            </span>
-            <span
-              style={{
-                fontFamily: FONTS.mono,
-                fontSize: '14px',
-                fontWeight: 400,
-                color: COLORS.primary,
-              }}
-            >
-              {formatPercentage(leadingPercentage)}%
-            </span>
+            Voted: "{poll.options[userVote.optionIndex]}"
           </div>
-          <div
-            style={{
-              height: '4px',
-              backgroundColor: COLORS.border,
-            }}
-          >
-            <div
-              style={{
-                height: '100%',
-                width: `${Math.min(Number(leadingPercentage) / 100, 100)}%`,
-                backgroundColor: COLORS.primary,
-              }}
-            />
-          </div>
-        </div>
-      )}
+        )}
+      </motion.div>
 
-      {/* User Vote Indicator */}
-      {userVote && poll && (
-        <div
-          style={{
-            fontFamily: FONTS.mono,
-            fontSize: '13px',
-            color: COLORS.primary,
-            marginTop: '12px',
-          }}
-        >
-          You voted: &quot;{poll.options[userVote.optionIndex]}&quot;
-        </div>
-      )}
+      {/* Active pulse keyframes */}
+      <style>{`
+        @keyframes activePulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
     </Link>
   );
 }

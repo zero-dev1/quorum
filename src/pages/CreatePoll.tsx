@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useWallet } from '../hooks/useWallet';
 import { useQNS } from '../hooks/useQNS';
 import { usePollCreation } from '../hooks/usePollCreation';
+import { PageTransition } from '../components/PageTransition';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { EligibilityBadge } from '../components/EligibilityBadge';
-import { ToastContainer } from '../components/Toast';
+import { useToast } from '../stores/toastStore';
 import { COLORS, FONTS, CREATION_FEE } from '../lib/constants';
+import { MOTION } from '../lib/motion';
 
 const MAX_QUESTION_LENGTH = 280;
 const MAX_OPTION_LENGTH = 100;
@@ -45,19 +48,10 @@ export function CreatePoll() {
   const [showPreview, setShowPreview] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [isExempt, setIsExempt] = useState(false);
+  const { toast } = useToast();
   const [creationFee, setCreationFee] = useState<bigint | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
-  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'error' }>>([]);
-
-  const addToast = (message: string, type: 'success' | 'error') => {
-    const id = Math.random().toString(36).substring(7);
-    setToasts(prev => [...prev, { id, message, type }]);
-  };
-
-  const removeToast = (id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
 
   useEffect(() => {
     const fetchFeeInfo = async () => {
@@ -136,12 +130,12 @@ export function CreatePoll() {
     setShowConfirmation(false);
 
     if (result.success) {
-      addToast('Poll created successfully! Redirecting...', 'success');
+      toast('Poll created successfully! Redirecting...', 'success');
       // Navigate to explore page after a short delay since we don't have the pollId
       // The user can find their new poll there
       setTimeout(() => navigate('/explore'), 2000);
     } else {
-      addToast(error || 'Transaction failed. Please try again.', 'error');
+      toast(error || 'Transaction failed. Please try again.', 'error');
       // Keep user on page with form data intact
     }
   };
@@ -205,8 +199,9 @@ export function CreatePoll() {
   }
 
   return (
-    <div style={{ padding: '88px 24px 48px', minHeight: '100vh', overflowX: 'hidden' }}>
-      <div style={{ maxWidth: '800px', margin: '0 auto', width: '100%' }}>
+    <PageTransition>
+      <div style={{ padding: '88px 24px 48px', minHeight: '100vh', overflowX: 'hidden' }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto', width: '100%' }}>
         <h1
           style={{
             fontFamily: FONTS.headline,
@@ -264,35 +259,44 @@ export function CreatePoll() {
         </div>
 
         {/* Options */}
-        <div style={{ marginBottom: '24px' }}>
-          <label
-            style={{
-              display: 'block',
-              fontFamily: FONTS.body,
-              fontSize: '14px',
-              fontWeight: 500,
-              color: COLORS.textSecondary,
-              marginBottom: '8px',
-            }}
-          >
-            Options (2-10)
-          </label>
-          {options.map((option, index) => (
-            <div key={index} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-              <input
-                type="text"
-                value={option}
-                onChange={(e) => updateOption(index, e.target.value)}
-                placeholder={`Option ${index + 1}`}
-                maxLength={MAX_OPTION_LENGTH}
+        <AnimatePresence>
+          {question.trim().length >= 10 && (
+            <motion.div
+              key="options-section"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ overflow: 'hidden', marginBottom: '24px' }}
+            >
+              <label
                 style={{
-                  flex: 1,
-                  padding: '12px 16px',
-                  backgroundColor: COLORS.background,
-                  border: `1px solid ${COLORS.border}`,
                   fontFamily: FONTS.body,
-                  fontSize: '16px',
+                  fontSize: '14px',
+                  fontWeight: 600,
                   color: COLORS.textPrimary,
+                  display: 'block',
+                  marginBottom: '8px',
+                }}
+              >
+                Options (2-10)
+              </label>
+              {options.map((option, index) => (
+                <div key={index} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <input
+                    type="text"
+                    value={option}
+                    onChange={(e) => updateOption(index, e.target.value)}
+                    placeholder={`Option ${index + 1}`}
+                    maxLength={MAX_OPTION_LENGTH}
+                    style={{
+                      flex: 1,
+                      padding: '12px 16px',
+                      backgroundColor: COLORS.background,
+                      border: `1px solid ${COLORS.border}`,
+                      fontFamily: FONTS.body,
+                      fontSize: '16px',
+                      color: COLORS.textPrimary,
                   outline: 'none',
                 }}
               />
@@ -301,11 +305,12 @@ export function CreatePoll() {
                   onClick={() => removeOption(index)}
                   style={{
                     padding: '12px 16px',
+                    minHeight: '44px',
                     backgroundColor: 'transparent',
                     border: 'none',
-                    color: COLORS.textSecondary,
-                    fontSize: '18px',
+                    color: COLORS.error,
                     cursor: 'pointer',
+                    fontSize: '14px',
                   }}
                 >
                   &times;
@@ -317,7 +322,8 @@ export function CreatePoll() {
             <button
               onClick={addOption}
               style={{
-                padding: '8px 0',
+                padding: '12px 16px',
+                minHeight: '44px',
                 backgroundColor: 'transparent',
                 border: 'none',
                 fontFamily: FONTS.body,
@@ -329,10 +335,21 @@ export function CreatePoll() {
               + Add Option
             </button>
           )}
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Duration */}
-        <div style={{ marginBottom: '24px' }}>
+        <AnimatePresence>
+          {options.filter(o => o.trim()).length >= 2 && (
+            <motion.div
+              key="duration-section"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ overflow: 'hidden', marginBottom: '24px' }}
+            >
           <label
             style={{
               display: 'block',
@@ -401,10 +418,21 @@ export function CreatePoll() {
               }}
             />
           )}
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Eligibility */}
-        <div style={{ marginBottom: '24px' }}>
+        <AnimatePresence>
+          {options.filter(o => o.trim()).length >= 2 && (
+            <motion.div
+              key="eligibility-section"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ overflow: 'hidden', marginBottom: '24px' }}
+            >
           <label
             style={{
               display: 'block',
@@ -480,10 +508,21 @@ export function CreatePoll() {
               }}
             />
           )}
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Description */}
-        <div style={{ marginBottom: '24px' }}>
+        <AnimatePresence>
+          {(durationDays !== null || customEndDate) && (
+            <motion.div
+              key="description-section"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ overflow: 'hidden', marginBottom: '24px' }}
+            >
           <label
             style={{
               display: 'block',
@@ -525,7 +564,9 @@ export function CreatePoll() {
           >
             {description.length}/{MAX_DESCRIPTION_LENGTH}
           </div>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Fee Display */}
         <div
@@ -649,13 +690,24 @@ export function CreatePoll() {
         )}
 
         {/* Submit */}
-        <div style={{ borderTop: `1px solid ${COLORS.border}`, paddingTop: '24px', marginTop: '32px' }}>
+        <AnimatePresence>
+          {(durationDays !== null || customEndDate) && (
+            <motion.div
+              key="submit-section"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div style={{ borderTop: `1px solid ${COLORS.border}`, paddingTop: '24px', marginTop: '32px' }}>
           <button
             onClick={showPreview ? handleCreate : handlePreview}
             disabled={isCreating}
             style={{
               width: '100%',
               padding: '16px 24px',
+              minHeight: '48px',
               backgroundColor: COLORS.primary,
               border: 'none',
               fontFamily: FONTS.body,
@@ -672,7 +724,10 @@ export function CreatePoll() {
               ? 'Create Poll'
               : 'Preview & Create'}
           </button>
-        </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <ConfirmationModal
@@ -696,7 +751,7 @@ export function CreatePoll() {
         </p>
       </ConfirmationModal>
 
-      <ToastContainer toasts={toasts} onClose={removeToast} />
-    </div>
+      </div>
+    </PageTransition>
   );
 }

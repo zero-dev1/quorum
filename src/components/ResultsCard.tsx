@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { useResultsReader } from '../hooks/useResultsReader';
 import { COLORS, FONTS } from '../lib/constants';
 import { RESULTS_READER_ADDRESS } from '../lib/contracts';
+import { MOTION, prefersReducedMotion } from '../lib/motion';
 
 interface ResultsCardProps {
   pollId: bigint;
@@ -58,10 +60,44 @@ export function ResultsCard({ pollId, isActive }: ResultsCardProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const formatPercentage = (value: bigint) => {
-    const num = Number(value);
-    return (num / 100).toFixed(2);
-  };
+  // CountUpValue component for animated percentages
+function CountUpValue({ target, delay = 0, suffix = '' }: { target: number; delay?: number; suffix?: string }) {
+  const [value, setValue] = useState(0);
+
+  useEffect(() => {
+    if (prefersReducedMotion()) {
+      setValue(target);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      const duration = 600;
+      const start = performance.now();
+      function tick(now: number) {
+        const progress = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        setValue(target * eased);
+        if (progress < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }, delay * 1000);
+    return () => clearTimeout(timeout);
+  }, [target, delay]);
+
+  if (prefersReducedMotion()) {
+    return (
+      <span style={{ fontFamily: FONTS.mono, fontSize: '14px', color: COLORS.primary }}>
+        {target.toFixed(1)}{suffix}
+      </span>
+    );
+  }
+
+  return (
+    <span style={{ fontFamily: FONTS.mono, fontSize: '14px', color: COLORS.primary }}>
+      {value.toFixed(1)}{suffix}
+    </span>
+  );
+}
 
   if (!results) {
     return (
@@ -131,40 +167,22 @@ export function ResultsCard({ pollId, isActive }: ResultsCardProps) {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {results.options.map((option, index) => {
-          const percentage = Number(results.percentages[index]) / 100;
-          const isLeading = index === Number(results.leadingOptionIndex);
-          const fillPercentage = animated ? percentage : 0;
-
+          const pct = Number(results.percentages[index]) / 100;
+          const isLeading = index === Number(results.leadingOptionIndex) && results.totalVotes > 0n;
+          
           return (
-            <div key={index}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '8px',
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: FONTS.body,
-                    fontSize: '14px',
-                    fontWeight: 400,
-                    color: COLORS.textPrimary,
-                  }}
-                >
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.06, duration: 0.3 }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ fontFamily: FONTS.body, fontSize: '14px', color: COLORS.textPrimary }}>
                   {option}
                 </span>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <span
-                    style={{
-                      fontFamily: FONTS.mono,
-                      fontSize: '14px',
-                      color: COLORS.primary,
-                    }}
-                  >
-                    {formatPercentage(results.percentages[index])}%
-                  </span>
+                  <CountUpValue target={pct} delay={index * 0.06} suffix="%" />
                   <span
                     style={{
                       fontFamily: FONTS.mono,
@@ -176,28 +194,25 @@ export function ResultsCard({ pollId, isActive }: ResultsCardProps) {
                   </span>
                 </div>
               </div>
-
-              <div
-                style={{
-                  height: '8px',
-                  backgroundColor: COLORS.border,
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                <div
+              <div style={{ height: '6px', backgroundColor: COLORS.border, position: 'relative', overflow: 'hidden' }}>
+                <motion.div
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${Math.min(pct, 100)}%` }}
+                  transition={{
+                    duration: 0.6,
+                    delay: index * MOTION.bar.staggerDelay,
+                    ease: [0.25, 0.1, 0.25, 1],
+                  }}
                   style={{
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     height: '100%',
-                    width: `${fillPercentage}%`,
-                    backgroundColor: isLeading ? COLORS.primary : 'rgba(99, 102, 241, 0.4)',
-                    transition: 'width 500ms ease-out',
+                    backgroundColor: isLeading ? COLORS.primary : 'rgba(99, 102, 241, 0.25)',
                   }}
                 />
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>

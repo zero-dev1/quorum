@@ -1,11 +1,53 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useWallet } from '../hooks/useWallet';
 import { useQNS } from '../hooks/useQNS';
 import { useResultsReader } from '../hooks/useResultsReader';
 import { usePollStorage } from '../hooks/usePollStorage';
 import { PollCard } from '../components/PollCard';
+import { PageTransition } from '../components/PageTransition';
 import { COLORS, FONTS } from '../lib/constants';
+import { MOTION, prefersReducedMotion } from '../lib/motion';
+
+// CountUpValue component for animated numbers
+function CountUpValue({ target, delay = 0, suffix = '' }: { target: number; delay?: number; suffix?: string }) {
+  const [value, setValue] = useState(0);
+
+  useEffect(() => {
+    if (prefersReducedMotion()) {
+      setValue(target);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      const duration = 600;
+      const start = performance.now();
+      function tick(now: number) {
+        const progress = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        setValue(target * eased);
+        if (progress < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }, delay * 1000);
+    return () => clearTimeout(timeout);
+  }, [target, delay]);
+
+  if (prefersReducedMotion()) {
+    return (
+      <span style={{ fontFamily: FONTS.mono, fontSize: '20px', color: COLORS.primary }}>
+        {target.toLocaleString()}{suffix}
+      </span>
+    );
+  }
+
+  return (
+    <span style={{ fontFamily: FONTS.mono, fontSize: '20px', color: COLORS.primary }}>
+      {Math.floor(value).toLocaleString()}{suffix}
+    </span>
+  );
+}
 
 // Helper to validate Ethereum addresses
 function isValidAddress(address: string | null | undefined): address is `0x${string}` {
@@ -138,7 +180,8 @@ export function Profile() {
   }
 
   return (
-    <div style={{ padding: '88px 24px 48px', minHeight: '100vh', overflowX: 'hidden' }}>
+    <PageTransition>
+      <div style={{ padding: '88px 24px 48px', minHeight: '100vh', overflowX: 'hidden' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
         {/* Header */}
         <div style={{ marginBottom: '32px' }}>
@@ -182,15 +225,7 @@ export function Profile() {
           }}
         >
           <div>
-            <span
-              style={{
-                fontFamily: FONTS.mono,
-                fontSize: '20px',
-                color: COLORS.primary,
-              }}
-            >
-              {voteCount.toString()}
-            </span>
+            <CountUpValue target={Number(voteCount)} delay={0.1} />
             <span
               style={{
                 fontFamily: FONTS.body,
@@ -203,15 +238,7 @@ export function Profile() {
             </span>
           </div>
           <div>
-            <span
-              style={{
-                fontFamily: FONTS.mono,
-                fontSize: '20px',
-                color: COLORS.primary,
-              }}
-            >
-              {createdCount.toString()}
-            </span>
+            <CountUpValue target={Number(createdCount)} delay={0.2} />
             <span
               style={{
                 fontFamily: FONTS.body,
@@ -232,6 +259,7 @@ export function Profile() {
             display: 'flex',
             borderBottom: `1px solid ${COLORS.border}`,
             marginBottom: '24px',
+            position: 'relative',
           }}
         >
           <button
@@ -240,7 +268,6 @@ export function Profile() {
               padding: '16px 24px',
               backgroundColor: 'transparent',
               border: 'none',
-              borderBottom: activeTab === 'votes' ? `2px solid ${COLORS.primary}` : 'none',
               fontFamily: FONTS.body,
               fontSize: '15px',
               fontWeight: 400,
@@ -256,7 +283,6 @@ export function Profile() {
               padding: '16px 24px',
               backgroundColor: 'transparent',
               border: 'none',
-              borderBottom: activeTab === 'created' ? `2px solid ${COLORS.primary}` : 'none',
               fontFamily: FONTS.body,
               fontSize: '15px',
               fontWeight: 400,
@@ -266,25 +292,52 @@ export function Profile() {
           >
             My Polls
           </button>
+          <motion.div
+            layoutId="profile-tab-underline"
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              height: '2px',
+              backgroundColor: COLORS.primary,
+              width: activeTab === 'votes' ? '84px' : '80px',
+              left: activeTab === 'votes' ? '0' : '84px',
+              transition: 'none',
+            }}
+          />
         </div>
 
         {/* Poll List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <motion.div
+          initial="initial"
+          animate="animate"
+          variants={{
+            animate: { transition: { staggerChildren: 0.08 } },
+            initial: {},
+          }}
+          style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+        >
           {activeTab === 'votes' ? (
             votedPolls.length > 0 ? (
-              votedPolls.map((pollId) => (
-                <PollCard
+              votedPolls.map((pollId, index) => (
+                <motion.div
                   key={pollId.toString()}
-                  pollId={pollId}
-                  userVote={
-                    userVotes.has(pollId.toString())
-                      ? { optionIndex: userVotes.get(pollId.toString())! }
-                      : null
-                  }
-                />
+                  variants={MOTION.stagger.item}
+                >
+                  <PollCard
+                    pollId={pollId}
+                    userVote={
+                      userVotes.has(pollId.toString())
+                        ? { optionIndex: userVotes.get(pollId.toString())! }
+                        : null
+                    }
+                  />
+                </motion.div>
               ))
             ) : (
-              <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+              <motion.div
+                variants={MOTION.stagger.item}
+                style={{ textAlign: 'center', padding: '48px 24px' }}
+              >
                 <p
                   style={{
                     fontFamily: FONTS.body,
@@ -302,18 +355,31 @@ export function Profile() {
                     fontSize: '14px',
                     color: COLORS.primary,
                     textDecoration: 'none',
+                    padding: '8px 16px',
+                    minHeight: '44px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                 >
                   Browse Active Polls
                 </Link>
-              </div>
+              </motion.div>
             )
           ) : createdPolls.length > 0 ? (
-            createdPolls.map((pollId) => (
-              <PollCard key={pollId.toString()} pollId={pollId} />
+            createdPolls.map((pollId, index) => (
+              <motion.div
+                key={pollId.toString()}
+                variants={MOTION.stagger.item}
+              >
+                <PollCard pollId={pollId} />
+              </motion.div>
             ))
           ) : (
-            <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <motion.div
+              variants={MOTION.stagger.item}
+              style={{ textAlign: 'center', padding: '48px 24px' }}
+            >
               <p
                 style={{
                   fontFamily: FONTS.body,
@@ -331,13 +397,18 @@ export function Profile() {
                   fontSize: '14px',
                   color: COLORS.primary,
                   textDecoration: 'none',
+                  padding: '8px 16px',
+                  minHeight: '44px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
                 Create Your First Poll
               </Link>
-            </div>
+            </motion.div>
           )}
-        </div>
+        </motion.div>
       </div>
 
       <style>{`
@@ -354,6 +425,7 @@ export function Profile() {
           }
         }
       `}</style>
-    </div>
+      </div>
+    </PageTransition>
   );
 }

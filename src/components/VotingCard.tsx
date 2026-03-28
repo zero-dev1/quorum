@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useWallet } from '../hooks/useWallet';
 import { useVoteAction } from '../hooks/useVoteAction';
 import { ConfirmationModal } from './ConfirmationModal';
 import { COLORS, FONTS } from '../lib/constants';
+import { MOTION } from '../lib/motion';
 
 interface VotingCardProps {
   pollId: bigint;
@@ -204,52 +206,42 @@ export function VotingCard({
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {options.map((option, index) => (
-            <button
+            <motion.button
               key={index}
               onClick={() => handleOptionSelect(index)}
+              whileHover={{ backgroundColor: 'rgba(99, 102, 241, 0.08)' }}
+              animate={{
+                opacity: selectedOption !== null && selectedOption !== index ? 0.5 : 1,
+                borderColor: selectedOption === index ? COLORS.primary : COLORS.border,
+              }}
+              transition={{ duration: 0.15 }}
               style={{
                 width: '100%',
                 padding: '16px',
-                backgroundColor: selectedOption === index ? 'rgba(99, 102, 241, 0.1)' : COLORS.background,
-                border: `1px solid ${selectedOption === index ? COLORS.primary : COLORS.border}`,
+                minHeight: '48px',
+                backgroundColor: selectedOption === index ? 'rgba(99, 102, 241, 0.12)' : COLORS.background,
+                border: `1px solid ${COLORS.border}`,
+                borderLeft: selectedOption === index ? `3px solid ${COLORS.primary}` : `1px solid ${COLORS.border}`,
                 textAlign: 'left',
                 cursor: 'pointer',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                transition: 'all 150ms ease',
-              }}
-              onMouseEnter={(e) => {
-                if (selectedOption !== index) {
-                  e.currentTarget.style.borderColor = COLORS.primary;
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (selectedOption !== index) {
-                  e.currentTarget.style.borderColor = COLORS.border;
-                }
+                fontFamily: FONTS.body,
+                fontSize: '15px',
+                fontWeight: selectedOption === index ? 600 : 400,
+                color: COLORS.textPrimary,
               }}
             >
-              <span
-                style={{
-                  fontFamily: FONTS.body,
-                  fontSize: '14px',
-                  fontWeight: 400,
-                  color: COLORS.textPrimary,
-                }}
-              >
-                {option}
-              </span>
+              {option}
               {selectedOption === index && (
-                <div
-                  style={{
-                    width: '6px',
-                    height: '6px',
-                    backgroundColor: COLORS.primary,
-                  }}
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  style={{ width: 6, height: 6, backgroundColor: COLORS.primary }}
                 />
               )}
-            </button>
+            </motion.button>
           ))}
         </div>
 
@@ -266,36 +258,33 @@ export function VotingCard({
           </p>
         )}
 
-        <button
-          onClick={handleCastVote}
-          disabled={selectedOption === null || isVoting}
-          style={{
-            width: '100%',
-            marginTop: '24px',
-            padding: '12px 24px',
-            backgroundColor: selectedOption === null ? COLORS.border : COLORS.primary,
-            border: 'none',
-            color: COLORS.textPrimary,
-            fontFamily: FONTS.body,
-            fontSize: '14px',
-            fontWeight: 600,
-            cursor: selectedOption === null ? 'not-allowed' : 'pointer',
-            opacity: selectedOption === null ? 0.7 : 1,
-            transition: 'all 150ms ease',
-          }}
-          onMouseEnter={(e) => {
-            if (selectedOption !== null) {
-              e.currentTarget.style.backgroundColor = COLORS.primaryHover;
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (selectedOption !== null) {
-              e.currentTarget.style.backgroundColor = COLORS.primary;
-            }
-          }}
-        >
-          Cast Vote
-        </button>
+        <AnimatePresence>
+          {selectedOption !== null && (
+            <motion.button
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              onClick={handleCastVote}
+              disabled={isVoting}
+              style={{
+                width: '100%',
+                marginTop: '24px',
+                padding: '14px 24px',
+                minHeight: '48px',
+                backgroundColor: COLORS.primary,
+                border: 'none',
+                color: '#FFF',
+                fontFamily: FONTS.body,
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Cast Vote
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
 
       <ConfirmationModal

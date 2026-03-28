@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom';
+import { PageTransition } from '../components/PageTransition';
 import { COLORS, FONTS } from '../lib/constants';
 
 export function About() {
   return (
-    <div style={{ padding: '88px 24px 48px', minHeight: '100vh', overflowX: 'hidden' }}>
+    <PageTransition>
+      <div style={{ padding: '88px 24px 48px', minHeight: '100vh', overflowX: 'hidden' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
         {/* Section 1 - Hero */}
         <section style={{ paddingBottom: '80px' }}>
@@ -361,6 +363,7 @@ export function About() {
           }
         }
       `}</style>
-    </div>
+      </div>
+    </PageTransition>
   );
 }

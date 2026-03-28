@@ -1,19 +1,21 @@
 import { Link } from 'react-router-dom';
+import { PageTransition } from '../components/PageTransition';
 import { COLORS, FONTS } from '../lib/constants';
 
 export function NotFound() {
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-        textAlign: 'center',
-      }}
-    >
+    <PageTransition>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center',
+        }}
+      >
       <h1
         style={{
           fontFamily: FONTS.headline,
@@ -39,6 +41,10 @@ export function NotFound() {
         to="/explore"
         style={{
           padding: '12px 24px',
+          minHeight: '44px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           backgroundColor: 'transparent',
           border: `1px solid ${COLORS.primary}`,
           color: COLORS.primary,
@@ -59,6 +65,7 @@ export function NotFound() {
       >
         Back to Explore
       </Link>
-    </div>
+      </div>
+    </PageTransition>
   );
 }
