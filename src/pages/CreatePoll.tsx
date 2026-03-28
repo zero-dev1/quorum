@@ -51,7 +51,8 @@ export function CreatePoll() {
   const { toast } = useToast();
   const [creationFee, setCreationFee] = useState<bigint | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [isConfirming, setIsConfirming] = useState(false);
+  const [confirmStatus, setConfirmStatus] = useState<'idle' | 'submitting' | 'confirming' | 'success' | 'error'>('idle');
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchFeeInfo = async () => {
@@ -110,9 +111,13 @@ export function CreatePoll() {
   };
 
   const handleConfirmCreate = async () => {
-    setIsConfirming(true);
+  setConfirmStatus('submitting');
+  setConfirmError(null);
 
-    // Use the fetched creation fee or default
+  await new Promise(r => setTimeout(r, 600));
+  setConfirmStatus('confirming');
+
+  try {
     const feeToSend = isExempt ? 0n : (creationFee || CREATION_FEE);
 
     const result = await createPoll(
@@ -126,19 +131,22 @@ export function CreatePoll() {
       feeToSend
     );
 
-    setIsConfirming(false);
-    setShowConfirmation(false);
-
     if (result.success) {
+      setConfirmStatus('success');
+      await new Promise(r => setTimeout(r, 1500));
+      setShowConfirmation(false);
+      setConfirmStatus('idle');
       toast('Poll created successfully! Redirecting...', 'success');
-      // Navigate to explore page after a short delay since we don't have the pollId
-      // The user can find their new poll there
-      setTimeout(() => navigate('/explore'), 2000);
+      setTimeout(() => navigate('/explore'), 500);
     } else {
-      toast(error || 'Transaction failed. Please try again.', 'error');
-      // Keep user on page with form data intact
+      setConfirmStatus('error');
+      setConfirmError(error || 'Transaction failed. Please try again.');
     }
-  };
+  } catch (err: any) {
+    setConfirmStatus('error');
+    setConfirmError(err?.message || 'Transaction failed. Please try again.');
+  }
+};
 
   if (!isConnected) {
     return (
@@ -701,7 +709,8 @@ export function CreatePoll() {
               style={{ overflow: 'hidden' }}
             >
               <div style={{ borderTop: `1px solid ${COLORS.border}`, paddingTop: '24px', marginTop: '32px' }}>
-          <button
+          <motion.button
+            whileTap={{ scale: 0.97 }}
             onClick={showPreview ? handleCreate : handlePreview}
             disabled={isCreating}
             style={{
@@ -723,7 +732,7 @@ export function CreatePoll() {
               : showPreview
               ? 'Create Poll'
               : 'Preview & Create'}
-          </button>
+          </motion.button>
               </div>
             </motion.div>
           )}
@@ -733,10 +742,23 @@ export function CreatePoll() {
       <ConfirmationModal
         isOpen={showConfirmation}
         title="Create Poll"
-        onCancel={() => setShowConfirmation(false)}
+        onCancel={() => {
+          if (confirmStatus === 'idle' || confirmStatus === 'error') {
+            setShowConfirmation(false);
+            setConfirmStatus('idle');
+            setConfirmError(null);
+          }
+        }}
         onConfirm={handleConfirmCreate}
-        isConfirming={isConfirming}
+        isConfirming={confirmStatus !== 'idle' && confirmStatus !== 'error'}
         confirmText="Create Poll"
+        status={confirmStatus}
+        successText="Poll Created"
+        errorMessage={confirmError || undefined}
+        onRetry={() => {
+          setConfirmStatus('idle');
+          setConfirmError(null);
+        }}
       >
         <p
           style={{

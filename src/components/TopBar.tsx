@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useWallet } from '../hooks/useWallet';
 import { useQNS } from '../hooks/useQNS';
 import { COLORS, FONTS } from '../lib/constants';
@@ -394,7 +395,8 @@ function WalletDisplay() {
 
   if (!isConnected) {
     return (
-      <button
+      <motion.button
+        whileTap={{ scale: 0.97 }}
         onClick={connect}
         disabled={isConnecting}
         style={{
@@ -421,7 +423,7 @@ function WalletDisplay() {
         }}
       >
         {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-      </button>
+      </motion.button>
     );
   }
 

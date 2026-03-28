@@ -68,18 +68,23 @@ function HeroHeadline() {
           key={i}
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{
-            delay: 0.15 + i * 0.18,
-            duration: 0.5,
-            ease: [0.25, 0.1, 0.25, 1],
-          }}
+          transition={
+            word === 'Final.'
+              ? {
+                  delay: 0.15 + i * 0.18,
+                  type: 'spring',
+                  stiffness: 300,
+                  damping: 15,
+                }
+              : {
+                  delay: 0.15 + i * 0.18,
+                  duration: 0.5,
+                  ease: [0.25, 0.1, 0.25, 1],
+                }
+          }
           style={{
             display: 'inline-block',
             marginRight: '0.25em',
-            // The period on "Final." gets a spring overshoot
-            ...(word === 'Final.'
-              ? {} // the spring is in the transition
-              : {}),
           }}
         >
           {word}
@@ -188,10 +193,25 @@ export function Landing() {
             transition={{ delay: 1.4, duration: 0.5 }}
             style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}
           >
-            <button
+            <motion.button
               onClick={handleEnter}
+              whileTap={{ scale: 0.97 }}
+              animate={{
+                boxShadow: [
+                  '0 0 20px rgba(99, 102, 241, 0.15)',
+                  '0 0 40px rgba(99, 102, 241, 0.25)',
+                  '0 0 20px rgba(99, 102, 241, 0.15)',
+                ],
+              }}
+              transition={{
+                boxShadow: {
+                  duration: 3,
+                  repeat: Infinity,
+                  ease: 'easeInOut',
+                },
+              }}
               style={{
-                padding: '16px 40px',
+                padding: '18px 48px',
                 backgroundColor: COLORS.primary,
                 border: 'none',
                 color: '#FFFFFF',
@@ -199,7 +219,7 @@ export function Landing() {
                 fontSize: '16px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                transition: 'background-color 150ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) =>
                 (e.currentTarget.style.backgroundColor = COLORS.primaryHover)
@@ -209,7 +229,7 @@ export function Landing() {
               }
             >
               Enter QUORUM
-            </button>
+            </motion.button>
             <Link
               to="/about"
               style={{
@@ -512,10 +532,25 @@ export function Landing() {
             >
               All you need is a wallet and a .qf name.
             </p>
-            <button
+            <motion.button
               onClick={handleEnter}
+              whileTap={{ scale: 0.97 }}
+              animate={{
+                boxShadow: [
+                  '0 0 20px rgba(99, 102, 241, 0.15)',
+                  '0 0 40px rgba(99, 102, 241, 0.25)',
+                  '0 0 20px rgba(99, 102, 241, 0.15)',
+                ],
+              }}
+              transition={{
+                boxShadow: {
+                  duration: 3,
+                  repeat: Infinity,
+                  ease: 'easeInOut',
+                },
+              }}
               style={{
-                padding: '16px 48px',
+                padding: '18px 48px',
                 backgroundColor: COLORS.primary,
                 border: 'none',
                 color: '#FFFFFF',
@@ -523,7 +558,7 @@ export function Landing() {
                 fontSize: '16px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                transition: 'background-color 150ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) =>
                 (e.currentTarget.style.backgroundColor = COLORS.primaryHover)
@@ -533,7 +568,7 @@ export function Landing() {
               }
             >
               Enter QUORUM
-            </button>
+            </motion.button>
           </motion.div>
         </section>
 

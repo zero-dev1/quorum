@@ -237,24 +237,42 @@ export function ConfirmationModal({
                       </button>
                     </>
                   ) : (
-                    <button
-                      onClick={onRetry}
-                      style={{
-                        flex: 1,
-                        padding: '12px 24px',
-                        minHeight: '44px',
-                        backgroundColor: COLORS.primary,
-                        border: `1px solid ${COLORS.primary}`,
-                        color: COLORS.textPrimary,
-                        fontFamily: FONTS.body,
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'all 150ms ease',
-                      }}
-                    >
-                      Try Again
-                    </button>
+                    <div style={{ display: 'flex', gap: '16px' }}>
+                      <button
+                        onClick={onCancel}
+                        style={{
+                          flex: 1,
+                          padding: '12px 24px',
+                          minHeight: '44px',
+                          backgroundColor: 'transparent',
+                          border: `1px solid ${COLORS.border}`,
+                          color: COLORS.textSecondary,
+                          fontFamily: FONTS.body,
+                          fontSize: '14px',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={onRetry}
+                        style={{
+                          flex: 1,
+                          padding: '12px 24px',
+                          minHeight: '44px',
+                          backgroundColor: COLORS.primary,
+                          border: `1px solid ${COLORS.primary}`,
+                          color: COLORS.textPrimary,
+                          fontFamily: FONTS.body,
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Try Again
+                      </button>
+                    </div>
                   )}
                 </div>
 

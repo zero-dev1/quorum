@@ -345,6 +345,7 @@ export function Explore() {
 
         {/* Floating Create Button */}
         <motion.div
+          whileTap={{ scale: 0.95 }}
           initial={{ y: 40, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.3 }}
@@ -375,39 +376,22 @@ export function Explore() {
 
       </div>
     <style>{`
-        @media (max-width: 768px) {
-          .explore-tabs button {
-            padding: '12px 16px' !important;
-            font-size: '14px' !important;
-          }
-          .explore-search input {
-            min-width: 0 !important;
-            flex: 1 !important;
-          }
-          .explore-filters {
-            gap: '12px' !important;
-          }
-          .explore-filters select,
-          .explore-filters input {
-            padding: '8px 12px' !important;
-            font-size: '13px' !important;
-          }
-        }
-        @media (max-width: 480px) {
-          .explore-tabs button {
-            padding: '10px 12px' !important;
-            font-size: '13px' !important;
-          }
-          .explore-filters {
-            flex-direction: column !important;
-            gap: '8px' !important;
-          }
-          .explore-filters select,
-          .explore-filters input {
-            width: 100% !important;
-          }
-        }
-      `}</style>
+  @media (max-width: 768px) {
+    .explore-tabs button {
+      padding: 12px 16px !important;
+      font-size: 14px !important;
+    }
+    .explore-search {
+      min-width: 0 !important;
+    }
+  }
+  @media (max-width: 480px) {
+    .explore-tabs button {
+      padding: 10px 12px !important;
+      font-size: 13px !important;
+    }
+  }
+`}</style>
     </PageTransition>
   );
 }

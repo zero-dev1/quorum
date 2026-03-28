@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MOTION, getRandomAphorism } from '../lib/motion';
+import { MOTION, getRandomAphorism, prefersReducedMotion } from '../lib/motion';
 import { COLORS, FONTS } from '../lib/constants';
 
 type Phase = 'idle' | 'fading' | 'void' | 'entering' | 'done';
@@ -18,8 +18,15 @@ export function PortalTransition({ children }: PortalTransitionProps) {
 
   const trigger = useCallback(() => {
     if (phase !== 'idle') return;
+    
+    if (prefersReducedMotion()) {
+      // Skip all animation, navigate directly
+      navigate('/explore');
+      return;
+    }
+    
     setPhase('fading');
-  }, [phase]);
+  }, [phase, navigate]);
 
   useEffect(() => {
     if (phase === 'fading') {

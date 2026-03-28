@@ -94,7 +94,8 @@ export function WalletModal() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {/* Talisman */}
-          <button
+          <motion.button
+            whileTap={{ scale: 0.98 }}
             onClick={() => handleSelect("talisman")}
             disabled={connecting}
             style={{
@@ -128,10 +129,11 @@ export function WalletModal() {
                 {hasTalisman ? "Detected" : "Not installed"}
               </div>
             </div>
-          </button>
+          </motion.button>
 
           {/* SubWallet */}
-          <button
+          <motion.button
+            whileTap={{ scale: 0.98 }}
             onClick={() => handleSelect("subwallet")}
             disabled={connecting}
             style={{
@@ -165,7 +167,7 @@ export function WalletModal() {
                 {hasSubWallet ? "Detected" : "Not installed"}
               </div>
             </div>
-          </button>
+          </motion.button>
         </div>
 
         {connecting && (

@@ -262,48 +262,42 @@ export function Profile() {
             position: 'relative',
           }}
         >
-          <button
-            onClick={() => setActiveTab('votes')}
-            style={{
-              padding: '16px 24px',
-              backgroundColor: 'transparent',
-              border: 'none',
-              fontFamily: FONTS.body,
-              fontSize: '15px',
-              fontWeight: 400,
-              color: activeTab === 'votes' ? COLORS.textPrimary : COLORS.textSecondary,
-              cursor: 'pointer',
-            }}
-          >
-            My Votes
-          </button>
-          <button
-            onClick={() => setActiveTab('created')}
-            style={{
-              padding: '16px 24px',
-              backgroundColor: 'transparent',
-              border: 'none',
-              fontFamily: FONTS.body,
-              fontSize: '15px',
-              fontWeight: 400,
-              color: activeTab === 'created' ? COLORS.textPrimary : COLORS.textSecondary,
-              cursor: 'pointer',
-            }}
-          >
-            My Polls
-          </button>
-          <motion.div
-            layoutId="profile-tab-underline"
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              height: '2px',
-              backgroundColor: COLORS.primary,
-              width: activeTab === 'votes' ? '84px' : '80px',
-              left: activeTab === 'votes' ? '0' : '84px',
-              transition: 'none',
-            }}
-          />
+          {[
+            { key: 'votes' as const, label: 'My Votes' },
+            { key: 'created' as const, label: 'My Polls' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                padding: '16px 24px',
+                backgroundColor: 'transparent',
+                border: 'none',
+                fontFamily: FONTS.body,
+                fontSize: '15px',
+                fontWeight: 400,
+                color: activeTab === tab.key ? COLORS.textPrimary : COLORS.textSecondary,
+                cursor: 'pointer',
+                position: 'relative',
+              }}
+            >
+              {tab.label}
+              {activeTab === tab.key && (
+                <motion.div
+                  layoutId="profile-tab-underline"
+                  transition={MOTION.tabUnderline.transition}
+                  style={{
+                    position: 'absolute',
+                    bottom: -1,
+                    left: 0,
+                    right: 0,
+                    height: '2px',
+                    backgroundColor: COLORS.primary,
+                  }}
+                />
+              )}
+            </button>
+          ))}
         </div>
 
         {/* Poll List */}

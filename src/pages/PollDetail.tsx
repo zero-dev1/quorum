@@ -392,9 +392,16 @@ export function PollDetail() {
 
         {/* Right Column */}
         <div>
-          {isActive && !hasVoted ? (
-            <>
-              {!isConnected ? (
+          <AnimatePresence mode="wait">
+            {/* State 1: Not connected */}
+            {isActive && !hasVoted && !isConnected && (
+              <motion.div
+                key="connect-prompt"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+              >
                 <p
                   style={{
                     fontFamily: FONTS.body,
@@ -405,7 +412,18 @@ export function PollDetail() {
                 >
                   Connect your wallet to vote.
                 </p>
-              ) : !hasQnsName ? (
+              </motion.div>
+            )}
+
+            {/* State 2: Connected but no QNS name */}
+            {isActive && !hasVoted && isConnected && !hasQnsName && (
+              <motion.div
+                key="qns-prompt"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+              >
                 <p
                   style={{
                     fontFamily: FONTS.body,
@@ -414,68 +432,73 @@ export function PollDetail() {
                     color: COLORS.textSecondary,
                   }}
                 >
-                  You need a .qf name to vote on QUORUM.{" "}
+                  You need a .qf name to vote on QUORUM.{' '}
                   <a
                     href="https://dotqf.xyz"
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ color: '#6366F1', textDecoration: 'none' }}
+                    style={{ color: COLORS.primary, textDecoration: 'none' }}
                   >
                     Register here →
                   </a>
                 </p>
-              ) : (
-                <AnimatePresence mode="wait">
-                  {isActive && !hasVoted && isConnected && hasQnsName && isEligible ? (
-                    <motion.div
-                      key="voting"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      transition={{ duration: 0.25 }}
-                    >
-                      <VotingCard
-                        pollId={pollId}
-                        options={[...poll.options]}
-                        question={poll.question}
-                        isEligible={isEligible}
-                        eligibilityReason={eligibilityReason}
-                        onVoteSuccess={() => {
-                          setHasVoted(true);
-                          setRefreshTrigger(prev => prev + 1);
-                        }}
-                      />
-                      <button
-                        onClick={() => setShowResults(!showResults)}
-                        style={{
-                          marginTop: '16px',
-                          padding: '0',
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          fontFamily: FONTS.body,
-                          fontSize: '14px',
-                          color: COLORS.primary,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {showResults ? 'Hide results' : 'Peek at results'}
-                      </button>
-                    </motion.div>
-                  ) : (hasVoted || !isActive) ? (
-                    <motion.div
-                      key="results"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3, delay: 0.1 }}
-                    >
-                      <ResultsCard pollId={pollId} isActive={isActive} />
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-              )}
-            </>
-          ) : null}
+              </motion.div>
+            )}
 
+            {/* State 3: Can vote — show VotingCard */}
+            {isActive && !hasVoted && isConnected && hasQnsName && (
+              <motion.div
+                key="voting"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+              >
+                <VotingCard
+                  pollId={pollId}
+                  options={[...poll.options]}
+                  question={poll.question}
+                  isEligible={isEligible}
+                  eligibilityReason={eligibilityReason}
+                  onVoteSuccess={() => {
+                    setHasVoted(true);
+                    setRefreshTrigger((prev) => prev + 1);
+                  }}
+                />
+                <button
+                  onClick={() => setShowResults(!showResults)}
+                  style={{
+                    marginTop: '16px',
+                    padding: '0',
+                    minHeight: '44px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    fontFamily: FONTS.body,
+                    fontSize: '14px',
+                    color: COLORS.primary,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {showResults ? 'Hide results' : 'Peek at results'}
+                </button>
+              </motion.div>
+            )}
+
+            {/* State 4: Has voted OR poll ended — show ResultsCard */}
+            {(hasVoted || !isActive) && (
+              <motion.div
+                key="results"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.3, delay: 0.1 }}
+              >
+                <ResultsCard pollId={pollId} isActive={isActive} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Peek at results (only while voting is available) */}
           <AnimatePresence>
             {showResults && !hasVoted && isActive && (
               <motion.div

@@ -30,6 +30,8 @@ export function VotingCard({
   const [hasVoted, setHasVoted] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmStatus, setConfirmStatus] = useState<'idle' | 'submitting' | 'confirming' | 'success' | 'error'>('idle');
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const handleOptionSelect = (index: number) => {
     setSelectedOption(index);
@@ -43,17 +45,36 @@ export function VotingCard({
   };
 
   const handleConfirmVote = async () => {
-    if (selectedOption === null) return;
+  if (selectedOption === null) return;
 
+  setConfirmStatus('submitting');
+  setConfirmError(null);
+
+  // Brief pause to let the user see "Submitting..." state
+  await new Promise(r => setTimeout(r, 600));
+  setConfirmStatus('confirming');
+
+  try {
     const result = await castVote(pollId, selectedOption);
 
     if (result.success) {
+      setConfirmStatus('success');
       setTxHash(result.hash || null);
-      setHasVoted(true);
+      // Hold the success state for 1.5s so user sees the checkmark
+      await new Promise(r => setTimeout(r, 1500));
       setShowConfirmation(false);
+      setConfirmStatus('idle');
+      setHasVoted(true);
       onVoteSuccess();
+    } else {
+      setConfirmStatus('error');
+      setConfirmError('Transaction failed. Please try again.');
     }
-  };
+  } catch (err: any) {
+    setConfirmStatus('error');
+    setConfirmError(err?.message || 'Transaction failed. Please try again.');
+  }
+};
 
   if (!isConnected) {
     return (
@@ -207,6 +228,7 @@ export function VotingCard({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {options.map((option, index) => (
             <motion.button
+              whileTap={{ scale: 0.98 }}
               key={index}
               onClick={() => handleOptionSelect(index)}
               whileHover={{ backgroundColor: 'rgba(99, 102, 241, 0.08)' }}
@@ -261,6 +283,7 @@ export function VotingCard({
         <AnimatePresence>
           {selectedOption !== null && (
             <motion.button
+              whileTap={{ scale: 0.97 }}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 12 }}
@@ -290,9 +313,22 @@ export function VotingCard({
       <ConfirmationModal
         isOpen={showConfirmation}
         title="Confirm Your Vote"
-        onCancel={() => setShowConfirmation(false)}
+        onCancel={() => {
+          if (confirmStatus === 'idle' || confirmStatus === 'error') {
+            setShowConfirmation(false);
+            setConfirmStatus('idle');
+            setConfirmError(null);
+          }
+        }}
         onConfirm={handleConfirmVote}
-        isConfirming={isVoting}
+        isConfirming={confirmStatus !== 'idle' && confirmStatus !== 'error'}
+        status={confirmStatus}
+        successText="Vote Cast"
+        errorMessage={confirmError || undefined}
+        onRetry={() => {
+          setConfirmStatus('idle');
+          setConfirmError(null);
+        }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <p

@@ -27,6 +27,7 @@ export function PollCard({ pollId, creator: initialCreator, endTime: initialEndT
   } | null>(null);
   const [creator] = useState<string>(initialCreator || '');
   const [endTime] = useState<bigint>(initialEndTime || 0n);
+  const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
     getPollResults(pollId).then((results) => {
@@ -66,24 +67,23 @@ export function PollCard({ pollId, creator: initialCreator, endTime: initialEndT
     <Link to={`/poll/${pollId}`} style={{ textDecoration: 'none', display: 'block' }}>
       <motion.div
         whileHover={MOTION.cardHover}
+        whileTap={{ scale: 0.995 }}
+        onHoverStart={() => setIsHovered(true)}
+        onHoverEnd={() => setIsHovered(false)}
         style={{
           backgroundColor: COLORS.surface,
-          border: `1px solid ${COLORS.border}`,
+          border: `1px solid ${isHovered ? 'rgba(99, 102, 241, 0.4)' : COLORS.border}`,
           padding: '24px',
-          paddingLeft: '27px', // 3px accent + 24px padding
+          paddingLeft: '27px',
           position: 'relative',
           overflow: 'hidden',
           cursor: 'pointer',
           transition: 'border-color 200ms ease',
         }}
-        onHoverStart={(e: any) => {
-          // Expand left accent bar via CSS — handled by the accent div below
-        }}
       >
         {/* Left accent bar */}
         <motion.div
-          initial={{ height: '3px' }}
-          whileHover={{ height: '100%' }}
+          animate={{ height: isHovered ? '100%' : '24px' }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
           style={{
             position: 'absolute',
